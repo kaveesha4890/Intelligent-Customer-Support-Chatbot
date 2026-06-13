@@ -2,5 +2,6 @@ venv/
 *.bin
 *.pt
 data/processed/
+models/intent_classifier
 .env
 __pycache__/
