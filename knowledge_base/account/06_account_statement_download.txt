@@ -1,0 +1,2 @@
+How do I download my account statement as a PDF?
+Go to Billing > Statements, select the month you want, and click "Download PDF." Statements are available for the past 24 months. If you need statements older than 24 months, you can submit a request through support, which may take up to 5 business days.

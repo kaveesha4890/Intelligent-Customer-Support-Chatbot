@@ -1,0 +1,2 @@
+How do I cancel a subscription or add-on service?
+Go to Account > Plans & Services > Manage Add-ons, select the service you want to cancel, and confirm cancellation. Cancelled add-ons remain active until the end of the current billing cycle, after which they will not be renewed or charged.

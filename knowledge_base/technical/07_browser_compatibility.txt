@@ -1,0 +1,2 @@
+Which browsers are supported for online banking?
+Online banking supports the latest versions of Chrome, Firefox, Safari, and Edge. We recommend keeping your browser updated and enabling cookies and JavaScript for full functionality. Internet Explorer is no longer supported.

@@ -1,0 +1,2 @@
+Why am I being charged extra for an international transaction?
+International transactions typically include a foreign transaction fee of around 2-3% of the purchase amount, charged by the card network. This fee is separate from any currency conversion rate applied by the merchant. Details of any international fee are itemized on your monthly statement.

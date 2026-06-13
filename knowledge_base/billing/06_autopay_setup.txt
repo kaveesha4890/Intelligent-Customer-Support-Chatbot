@@ -1,0 +1,2 @@
+How do I set up automatic payments (autopay)?
+To enable autopay, go to Settings > Payment Methods > Enable Autopay, select your preferred payment method, and confirm. Autopay will deduct the full statement balance on the due date each month. You can disable autopay at any time before the next billing cycle.

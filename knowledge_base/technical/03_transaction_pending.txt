@@ -1,0 +1,2 @@
+Why is my transaction showing as pending for a long time?
+Transactions can remain in "pending" status for up to 3 business days while the merchant's bank confirms and settles the payment. This is normal for card payments and does not mean the transaction failed. Once settled, the transaction will move to "completed" status automatically.

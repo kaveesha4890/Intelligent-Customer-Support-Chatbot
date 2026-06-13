@@ -1,0 +1,2 @@
+How do I update the mobile banking app?
+Open the App Store (iOS) or Google Play Store (Android), search for the app name, and tap "Update" if available. We recommend enabling automatic app updates in your device settings to ensure you always have the latest security patches and features.

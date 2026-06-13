@@ -1,0 +1,2 @@
+How long does a refund take to process?
+Approved refunds are typically processed within 5-10 business days, depending on your bank's processing time. Refunds are issued to the original payment method used for the transaction. You can check refund status under Billing > Refund History.

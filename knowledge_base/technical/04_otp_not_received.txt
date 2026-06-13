@@ -1,0 +1,2 @@
+I am not receiving the OTP (one-time password) code.
+If you do not receive the OTP via SMS, check that your registered phone number is correct under Account > Personal Details, ensure you have network signal, and wait at least 2 minutes before requesting a new code. You can also switch to email OTP under Settings > Security.

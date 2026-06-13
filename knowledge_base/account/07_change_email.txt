@@ -1,0 +1,2 @@
+How do I change the email address linked to my account?
+Go to Account > Personal Details > Email Address, enter your new email, and confirm via the verification link sent to the new address. Your old email will remain active for security notifications for 24 hours after the change.

@@ -1,0 +1,2 @@
+The mobile app is not loading or keeps crashing.
+First, ensure you have the latest version of the app installed from the App Store or Google Play. Try clearing the app cache under your phone's Settings > Apps, or restart your device. If the issue persists, uninstall and reinstall the app, which resolves most loading issues.

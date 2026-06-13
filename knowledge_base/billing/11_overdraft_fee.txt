@@ -1,0 +1,2 @@
+What is an overdraft fee and how can I avoid it?
+An overdraft fee is charged when a transaction exceeds your available balance and the bank covers the difference. To avoid overdraft fees, enable low-balance alerts under Settings > Notifications, or opt out of overdraft coverage entirely under Settings > Overdraft Preferences.

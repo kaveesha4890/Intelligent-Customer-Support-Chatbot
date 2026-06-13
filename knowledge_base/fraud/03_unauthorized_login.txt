@@ -1,0 +1,2 @@
+I see a login from a device or location I do not recognize.
+If you notice an unrecognized login under Settings > Login Activity, change your password immediately and enable two-factor authentication. You can also remotely log out all other devices under Settings > Security > Active Sessions.

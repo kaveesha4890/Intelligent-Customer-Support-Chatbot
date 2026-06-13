@@ -1,0 +1,2 @@
+I received a suspicious email asking for my account details.
+We will never ask for your password, PIN, or full card number via email or text. Do not click any links in suspicious messages. Forward the suspicious email to our security team at security@example.com and delete it. You can verify official communications under Settings > Message Center.

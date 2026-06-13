@@ -1,0 +1,2 @@
+How do I switch to paperless billing?
+To switch to paperless billing, go to Settings > Communication Preferences and toggle off "Mailed Paper Statements." You will continue receiving statements electronically via email and the app. Switching to paperless billing may also qualify you for a small monthly discount.

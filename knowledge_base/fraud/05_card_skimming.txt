@@ -1,0 +1,2 @@
+I think my card information was stolen via a skimming device.
+If you suspect card skimming, freeze your card immediately under Account > Cards > Freeze Card and report it as compromised. A new card with a different number will be issued. Monitor your transaction history closely for any unauthorized charges over the next few weeks.

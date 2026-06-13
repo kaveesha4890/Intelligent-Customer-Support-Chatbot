@@ -1,0 +1,2 @@
+I cannot log in even with the correct password.
+Login failures with a correct password are often caused by an expired session, an outdated app version, or a temporary account lock after repeated attempts. Try resetting your password, updating the app, or waiting 15 minutes before trying again if your account was temporarily locked.

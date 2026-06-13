@@ -1,0 +1,2 @@
+Why is my account locked and how do I unlock it?
+Accounts are typically locked after multiple incorrect login attempts or suspicious activity flags for security reasons. To unlock your account, use the "Unlock Account" link on the login page, which will send a verification code to your registered email or phone.

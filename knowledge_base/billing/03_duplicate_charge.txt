@@ -1,0 +1,2 @@
+My card was charged twice for the same transaction.
+Duplicate charges are usually automatically reversed by the merchant's bank within 3-5 business days. If the duplicate charge is not reversed after 5 business days, please open a dispute through Billing > Dispute a Charge, and our team will investigate and refund the duplicate amount if confirmed.

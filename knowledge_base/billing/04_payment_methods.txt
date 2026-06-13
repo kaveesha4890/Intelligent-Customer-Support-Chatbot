@@ -1,0 +1,2 @@
+What payment methods are accepted for bill payment?
+We accept payments via bank transfer, debit card, credit card, and direct debit (autopay). You can set up or change your payment method under Settings > Payment Methods. Direct debit payments are processed automatically on your due date.

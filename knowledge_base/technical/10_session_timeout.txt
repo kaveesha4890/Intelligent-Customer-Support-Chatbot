@@ -1,0 +1,2 @@
+Why was I logged out automatically?
+For security purposes, sessions automatically time out after 5 minutes of inactivity in the app and 10 minutes on the web platform. This helps protect your account if you forget to log out on a shared or public device.

@@ -1,0 +1,2 @@
+How do I enable two-factor authentication (2FA)?
+To enable 2FA, go to Settings > Security > Two-Factor Authentication and choose either SMS verification or an authenticator app. Once enabled, you will be required to enter a one-time code in addition to your password each time you log in from a new device.

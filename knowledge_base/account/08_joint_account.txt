@@ -1,0 +1,2 @@
+How do I add a joint account holder?
+To add a joint account holder, go to Account > Manage Account Holders > Add Joint Holder. Both parties must verify their identity, and the new holder will need to accept an invitation sent to their email. This process typically takes 1-3 business days.

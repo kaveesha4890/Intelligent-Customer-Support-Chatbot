@@ -1,0 +1,2 @@
+How do I enable fingerprint or face ID login?
+Go to Settings > Security > Biometric Login and follow the prompts to register your fingerprint or face ID using your device's built-in biometric sensor. Biometric login can be disabled at any time, and your password will still work as a fallback option.

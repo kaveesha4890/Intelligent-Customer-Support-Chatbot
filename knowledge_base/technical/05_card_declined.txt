@@ -1,0 +1,2 @@
+Why was my card declined at a merchant?
+Card declines commonly occur due to insufficient funds, exceeding your daily spending limit, the card being frozen for security reasons, or the merchant's payment terminal being offline. Check Account > Cards > Card Status, and try the transaction again or contact support if the card shows as active.

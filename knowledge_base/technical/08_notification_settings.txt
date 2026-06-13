@@ -1,0 +1,2 @@
+How do I turn on or off push notifications?
+Go to Settings > Notifications within the app to manage alerts for transactions, low balance, bill due dates, and security events. You can customize which notifications are sent via push, SMS, or email independently.
