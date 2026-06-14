@@ -13,4 +13,3 @@ evaluate
 rouge-score
 nltk
 python-dotenv
-openai
