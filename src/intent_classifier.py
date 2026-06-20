@@ -1,14 +1,16 @@
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
+import json
+import os
 
 MODEL_PATH = "models/intent_classifier"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH, local_files_only=True)
 model.eval()
 
-# Banking77 label names (order matters - get from dataset.features["label"].names)
-from datasets import load_dataset
-LABELS = load_dataset("banking77")["train"].features["label"].names
+with open(os.path.join(MODEL_PATH, "labels.json"), "r") as f:
+    LABELS = json.load(f)
 
 def classify_intent(text: str) -> dict:
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=64)

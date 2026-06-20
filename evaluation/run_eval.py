@@ -32,10 +32,14 @@ def main():
     scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
 
     results = []
+    from nltk.translate.bleu_score import SmoothingFunction
+    chencherry = SmoothingFunction()
+    
     for _, row in test_set.iterrows():
         response, intent, sentiment, escalated = chat(row["query"], [])
-        bleu = sentence_bleu([row["reference"].split()], response.split())
+        bleu = sentence_bleu([row["reference"].split()], response.split(), smoothing_function=chencherry.method1)
         rouge_l = scorer.score(row["reference"], response)["rougeL"].fmeasure
+
 
         results.append({
             "query": row["query"],
