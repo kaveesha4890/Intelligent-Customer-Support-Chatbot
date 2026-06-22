@@ -6,7 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datasets import load_dataset  # noqa: F401
 
 from flask import Flask, request, jsonify, render_template_string
-from src.chatbot_pipeline import chat
+from src.agent_graph import run_agent
 from src.database import init_db, save_turn, save_feedback, get_all_stats
 
 app = Flask(__name__)
@@ -249,7 +249,7 @@ def chat_endpoint():
     history    = data.get('history', [])
     session_id = data.get('session_id', 'unknown')
 
-    response, intent, sentiment, escalated, category = chat(message, history)
+    response, intent, sentiment, escalated, category = run_agent(message, history, session_id)
 
     turn_id = save_turn(session_id, message, response, intent, sentiment, escalated, category)
 
