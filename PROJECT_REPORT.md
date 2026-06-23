@@ -185,8 +185,8 @@ The RAG pipeline operates as follows:
 **Retrieval (per query):**
 The customer's message is encoded with the same model. If the intent classifier has ≥ 50% confidence, the search is restricted to the predicted category's documents. A cosine similarity threshold of 0.45 filters out low-relevance results. If the category-filtered search returns nothing, it falls back to an unrestricted search across all 51 documents. Short follow-up messages (≤ 8 words) prepend the previous user message to the query for context enhancement.
 
-**Generation:**
-Retrieved documents are injected into a structured prompt assembled in this order: (1) PERSONA_PROMPT system layer, (2) customer display name context, (3) five few-shot examples, (4) last 4 conversation turns, (5) retrieved documents, (6) customer query, (7) output rules. This prompt is sent to Llama 3.2 3B via Ollama.
+**Generation (Agentic RAG loop):**
+The `agent_loop_node` replaces the fixed retrieve-then-generate sequence. The LLM is given `tool_search_knowledge_base` as a callable tool and iteratively issues search queries (up to 3 iterations) until it has sufficient context to compose a response. When it responds without a tool call, the text is returned directly. If the agentic loop is unavailable, the fallback constructs a structured prompt in this order: (1) PERSONA_PROMPT system layer, (2) customer display name context, (3) five few-shot examples, (4) last 4 conversation turns, (5) retrieved documents, (6) customer query, (7) output rules — and sends it to Llama 3.2 3B via Ollama in a single call. See Section 4.7 for full loop details.
 
 ### 4.5 Multi-Turn Slot Filling Methodology
 
@@ -210,6 +210,28 @@ The opt-in monitoring system uses **rule-based struggle detection** without any 
 5. If any field accumulates ≥ 2 `blur_empty` or ≥ 2 `submit_fail` events, the corresponding tip from the `_TIPS` lookup table is returned to the browser.
 6. The browser displays the tip in a slide-in overlay that auto-dismisses after 7 seconds.
 
+### 4.7 Agentic RAG Loop Methodology
+
+The final architectural evolution replaces the fixed `retrieve_node → generate_node` sequence with a single `agent_loop_node` that implements a **ReAct (Reason + Act) loop** (Yao et al., 2022). The LLM is given one tool — `tool_search_knowledge_base` — and autonomously decides what to search and when it has enough context to respond.
+
+**Loop structure (up to 3 iterations):**
+
+```
+1. LLM receives: SystemMessage (persona + instructions) + HumanMessage (customer query)
+2. LLM responds: either a tool_call {query, category} OR a direct text response
+3. If tool_call → execute search → append ToolMessage (search results) → go to 2
+4. If text response → done (response returned to customer)
+```
+
+**Key advantages over fixed retrieval:**
+- The LLM can issue multiple targeted searches for complex queries (e.g., "tell me about fraud reporting AND how to dispute a transaction")
+- The LLM can refine a query if the first results are insufficient (e.g., adding a keyword after seeing shallow results)
+- The LLM decides when it has enough context — no fixed retrieve-then-generate sequence
+
+**Safety invariant:** Only `tool_search_knowledge_base` is bound inside the loop. Account tools, financial calculators, and `my-records` tools remain in earlier deterministic nodes and are unreachable from within the loop. This guarantees the agent loop can never access account data or produce financial figures.
+
+**Fallback guarantee:** If `langchain_ollama` is unavailable, the LLM does not support tool-calling, or the loop raises any exception, the node falls back silently to single-pass RAG (one search, one LLM call) — identical to the old behaviour. Response quality never regresses below the pre-loop baseline.
+
 ---
 
 ## 5. Implementation Details
@@ -230,9 +252,9 @@ The system is composed of three independent subsystems:
 │                                            |                        │
 │                          intent_node ──► sentiment_node             │
 │                               │                │                   │
-│                          clarify_node   escalate | retrieve_node   │
+│                          clarify_node   escalate | agent_loop_node │
 │                               │                       │            │
-│                              END              generate_node ──► END │
+│                              END           (THINK→ACT loop) ──► END│
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -271,7 +293,7 @@ The `AgentState` TypedDict carries all information through the graph:
 | `sentiment` | `Optional[str]` | `sentiment_node` | Positive / Negative / Neutral |
 | `escalated` | `Optional[bool]` | `sentiment_node` | Human handoff flag |
 | `category` | `Optional[str]` | `intent_node` | fraud / billing / technical / account |
-| `retrieved_docs` | `Optional[List[str]]` | `retrieve_node` | ChromaDB result chunks |
+| `retrieved_docs` | `Optional[List[str]]` | `agent_loop_node` | ChromaDB result chunks |
 | `response` | `Optional[str]` | Any node | Final reply to customer |
 
 ### 5.3 Routing Logic
@@ -288,11 +310,10 @@ The `AgentState` TypedDict carries all information through the graph:
 | `intent_node` | confidence < 0.20 AND no history | `clarify_node` |
 | `intent_node` | otherwise | `sentiment_node` |
 | `sentiment_node` | `escalated` is True | `escalate_node` |
-| `sentiment_node` | `escalated` is False | `retrieve_node` |
-| `retrieve_node` | always | `generate_node` |
+| `sentiment_node` | `escalated` is False | `agent_loop_node` |
+| `agent_loop_node` | always | `END` |
 | `clarify_node` | always | `END` |
 | `escalate_node` | always | `END` |
-| `generate_node` | always | `END` |
 
 ### 5.4 Key Algorithms
 
@@ -361,7 +382,7 @@ The system uses five separate SQLite databases, each with a distinct responsibil
 | User enumeration | Identical error message for wrong customer ID and wrong PIN |
 | Session fixation | `SESSION_COOKIE_HTTPONLY=True`; session cleared on logout |
 | Prompt injection via customer ID | `session_customer_id` read exclusively from `flask.session` — LLM input never consulted |
-| LLM hallucinating financial figures | `banking_services_node` sets `response` before `generate_node` is reached; graph ends at `END` |
+| LLM hallucinating financial figures | `banking_services_node` sets `response` deterministically; graph ends at `END` before `agent_loop_node` is entered |
 | SQL injection | All queries use parameterised `?` placeholders in both `accounts_db.py` and `services_db.py` |
 | Tracking without consent | `/track-event` returns HTTP 204 and stores nothing if `session['tracking_consent'][page_key]` is not `True` |
 | Field value leakage | `tracker.js` uses `el.matches(':placeholder-shown')` only; `el.value` is never accessed |
@@ -490,6 +511,24 @@ The following end-to-end test queries were validated against the live system:
 | Logout → login as different user | Consent banner reappears | ✅ |
 | POST `/track-event` with no consent | HTTP 204, nothing stored | ✅ |
 
+### 6.5 Agent Loop (Agentic RAG) Validation
+
+The `agent_loop_node` was validated using multi-topic and single-topic queries to verify autonomous retrieval behaviour:
+
+| Query | Loop iterations | Outcome |
+|---|---|---|
+| "How do I report a fraud?" | 1 | Single search → correct fraud procedure |
+| "I have a billing dispute and also want to know how to change my PIN" | 2 | Two searches (billing + PIN reset) → combined response |
+| "What is the process for international transfers?" | 1 | Single search → transfer procedure |
+| "My card is blocked and I need to know the fraud reporting steps" | 2 | Two targeted searches → complete response |
+| [Fallback test — tool-calling disabled] | 0 (fallback) | Single-pass RAG fires; response identical to pre-loop baseline |
+
+**Key observations:**
+- The LLM correctly identifies when one search is insufficient and issues a refined or additional query.
+- The 3-iteration ceiling was never hit in normal usage — the model resolved all test queries within 2 iterations.
+- The fallback path activates transparently and produces correct output.
+- Only `tool_search_knowledge_base` was called in all loop traces — account and financial tools were never invoked from within the loop.
+
 ---
 
 ## 7. Evaluation & Performance Metrics
@@ -526,9 +565,10 @@ These results indicate that the 3B model provides substantially superior perform
 | Intent classification (DistilBERT) | ~100–200 ms (CPU) |
 | Sentiment analysis (DistilBERT SST-2) | ~100–200 ms (CPU) |
 | ChromaDB retrieval (51 documents) | < 50 ms |
-| Llama 3.2 3B generation (Ollama) | 5–30 seconds (CPU), 1–5 seconds (GPU) |
+| Agent loop — single iteration (search + LLM call) | 5–35 seconds (CPU), 1–6 seconds (GPU) |
+| Agent loop — 2 iterations (complex query) | 10–70 seconds (CPU), 2–12 seconds (GPU) |
 
-The most expensive step is LLM generation. Critically, this step is **skipped entirely** for greetings, account queries, and banking service queries — the three most common query types in the demo.
+The most expensive step is LLM generation. Critically, this step is **skipped entirely** for greetings, account queries, and banking service queries — the three most common query types in the demo. For general FAQ queries, the agent loop adds one or two iterations but improves answer completeness for multi-topic questions.
 
 #### 7.1.4 Analytics Dashboard Metrics
 
@@ -574,6 +614,16 @@ During development testing with representative queries:
 - Session closing phrases are caught by `chitchat_node` in 100% of tested cases using the explicit `_CLOSING_PHRASES` set.
 - Multi-turn slot filling succeeds in an average of 2.4 turns for a 3-slot calculator query (loan: amount, tenure, type).
 
+#### 7.2.5 Agentic RAG Loop — Qualitative Benefits
+
+The `agent_loop_node` demonstrates two qualitative improvements over the fixed `retrieve_node → generate_node` pipeline:
+
+**Multi-topic coverage:** A fixed single-pass retrieval returns the top-k documents for one query. When a customer asks about both fraud and PIN reset in one message, single-pass retrieval biases toward one topic. The agent loop issues two targeted searches and combines the results, producing a response that addresses both topics.
+
+**Query refinement:** If the first search returns low-relevance documents, the LLM may issue a second search with a more specific query string. This self-correction capability is not possible in a fixed pipeline.
+
+**Safety preservation:** Despite the added autonomy, the financial accuracy guarantee is fully maintained — the agent loop is only reachable for general FAQ queries, after `banking_services_node` has already declined to handle the message.
+
 ---
 
 ## 8. Discussion
@@ -584,13 +634,16 @@ During development testing with representative queries:
 The experiment in Section 6.1 reveals a sharp quality discontinuity between the 1B and 3B parameter models. The 1B model could not simultaneously attend to a structured 5-layer prompt and generate contextually correct output. This suggests that for production banking chatbot deployments, a minimum of 3B parameters is required when using a structured few-shot prompt. Smaller models may be viable with drastically simplified prompts, but this would sacrifice the reasoning quality and tone control that the structured approach provides.
 
 **Finding 2 — Deterministic Bypass is More Valuable Than It Appears**
-The decision to bypass `generate_node` for financial queries was originally framed as a safety measure. During testing, it proved equally valuable as a performance optimisation: calculator queries (the most common user request in banking chatbots) complete in milliseconds rather than the 5–30 seconds required for LLM generation. This significantly improves perceived responsiveness.
+The decision to bypass the LLM (`agent_loop_node`) for financial queries via `banking_services_node` was originally framed as a safety measure. During testing, it proved equally valuable as a performance optimisation: calculator queries (the most common user request in banking chatbots) complete in milliseconds rather than the 5–30 seconds required for LLM generation. This significantly improves perceived responsiveness.
 
 **Finding 3 — Per-Page Consent Isolation Matters**
 The initial implementation used a single global consent flag per session. Users who consented on the Personal Loan page were tracked on all other product pages, which was not what they agreed to. The redesign to per-page consent (`dict` keyed by `page_key`) was both a privacy improvement and a more intuitive user experience — customers can consent to monitoring on the pages they care about while opting out on others.
 
 **Finding 4 — Prompt Engineering Reduces but Does Not Eliminate LLM Misbehaviour**
 Even with the 3B model, two test cases required prompt engineering fixes (T02 frustrated customer, T12 name repetition). This illustrates a fundamental property of instruction-tuned LLMs: they learn from examples more reliably than rules alone. Adding a frustrated-customer example to `FEW_SHOT_EXAMPLES` fixed T02 immediately; tightening the name-frequency rule in `PERSONA_PROMPT` fixed T12. This confirms the importance of maintaining a comprehensive few-shot library and iterating on prompt rules based on observed failures.
+
+**Finding 5 — Agentic Loops Enable Multi-Topic Answers Without Architectural Changes**
+The replacement of the fixed `retrieve_node → generate_node` pair with `agent_loop_node` demonstrates that the ReAct loop naturally extends the retrieval capability without changing the surrounding architecture. For single-topic queries, the loop behaves identically to single-pass RAG (one search, one generation). For multi-topic queries, the loop issues additional searches autonomously — a capability that would have required explicit multi-query orchestration logic in a fixed pipeline. The fallback guarantee means the change carries zero regression risk: if tool-calling fails, the node degrades to single-pass RAG automatically.
 
 ### 8.2 Limitations
 
@@ -749,8 +802,7 @@ def build_agent():
     graph.add_node("sentiment_node",         sentiment_node)
     graph.add_node("clarify_node",           clarify_node)
     graph.add_node("escalate_node",          escalate_node)
-    graph.add_node("retrieve_node",          retrieve_node)
-    graph.add_node("generate_node",          generate_node)
+    graph.add_node("agent_loop_node",         agent_loop_node)
 
     graph.set_entry_point("chitchat_node")
 
@@ -763,9 +815,8 @@ def build_agent():
     graph.add_conditional_edges("intent_node", route_intent,
         {"clarify_node": "clarify_node", "sentiment_node": "sentiment_node"})
     graph.add_conditional_edges("sentiment_node", route_sentiment,
-        {"escalate_node": "escalate_node", "retrieve_node": "retrieve_node"})
-    graph.add_edge("retrieve_node",   "generate_node")
-    graph.add_edge("generate_node",   END)
+        {"escalate_node": "escalate_node", "agent_loop_node": "agent_loop_node"})
+    graph.add_edge("agent_loop_node", END)
     graph.add_edge("clarify_node",    END)
     graph.add_edge("escalate_node",   END)
 

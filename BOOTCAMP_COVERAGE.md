@@ -37,7 +37,7 @@ This is the foundation of every modern RAG system. Without semantic retrieval, t
 | Long-term Memory | `chat_history.db` stores every conversation turn; `accounts.db` holds persistent customer identity; `services.db` holds rate data |
 | Human-in-the-loop | `escalate_node` detects negative sentiment or explicit dispute keywords and routes to a human agent flag (`escalated=True`) |
 | Safety Guardrails | `session_customer_id` is sourced exclusively from `flask.session` — the LLM can never supply or modify it. All financial figures come from deterministic DB lookups |
-| Agentic Design Patterns | Sequential routing (intent → sentiment → generate), conditional branching (route_to_node), tool use (15 `@tool` functions) |
+| Agentic Design Patterns | Sequential routing (intent → sentiment → agent_loop_node), conditional branching (route_to_node), tool use (15 `@tool` functions), ReAct loop in `agent_loop_node` (THINK → ACT → OBSERVE) |
 
 ### Why we used it
 A single LLM call cannot handle the full customer support workflow. It cannot verify identity, check a real database, escalate a frustrated customer, or track what was asked two turns ago. The agentic framework separates each concern into a dedicated node, making each step independently testable and auditable.
@@ -57,7 +57,7 @@ Agentic design is what separates a *demo chatbot* from a *production system*. Th
 | Prompt Templates | `CHAIN_OF_THOUGHT_TEMPLATE`, `FEW_SHOT_EXAMPLES`, `PERSONA_PROMPT` in `src/prompt_templates.py` — structured prompts that enforce tone, reasoning style, and safety rules |
 | Output Parsers | `classify_intent()` returns a structured `{"intent": str, "confidence": float}` dict; `analyse_sentiment()` returns `{"label": str, "escalate": bool}` |
 | Document Loaders | `populate_from_txt_files()` reads `.txt` FAQ files from `data/`, chunks them, embeds them, and stores them in `knowledge.db` |
-| Chains | The LangGraph graph *is* a chain: each node calls one or more tools, passes structured output to the next node via `AgentState` |
+| Chains | The LangGraph graph *is* a chain: each node calls one or more tools, passes structured output to the next node via `AgentState`. `agent_loop_node` uses `ChatOllama.bind_tools()` to give the LLM callable tool schemas — a LangChain Core feature for structured tool-calling |
 
 ### Why we used it
 LangChain's `@tool` decorator gives every function a schema that LangGraph can inspect and route. Prompt templates enforce consistent behaviour across all LLM calls — without them, the LLM's tone and safety rules would drift unpredictably. Output parsers make LLM responses machine-readable so the next node can act on them programmatically rather than parsing free text.
@@ -75,9 +75,9 @@ LangChain is the connective tissue of the system. It standardises how tools are 
 |---|---|
 | Embedding storage | `knowledge.db` (SQLite) stores the `embedding` blob for every FAQ chunk as a serialised numpy array |
 | Similarity search | `retrieve_similar()` in `src/knowledge_db.py` loads all embeddings, computes cosine similarity, and returns chunks above a 0.45 threshold |
-| Agentic RAG | `rag_node` is a dedicated graph node — retrieval is not bolted onto generation, it is a first-class step. Retrieved docs are stored in `AgentState["retrieved_docs"]` and passed explicitly to the generate node |
-| Metadata filtering | `retrieve_top_k(query, category="fraud")` filters by category — the category is determined by a prior node, narrowing retrieval to relevant docs |
-| Hallucination mitigation | If retrieval returns nothing, `rag_node` sets `retrieved_docs=[]` and the generate node detects this and provides a fallback rather than hallucinating |
+| Agentic RAG | `agent_loop_node` replaces the fixed retrieve→generate pair with a **ReAct loop**: the LLM is given `tool_search_knowledge_base` as a callable tool and iteratively issues search queries (up to 3 iterations) until it decides it has enough context to respond. Retrieved docs accumulate across iterations in `AgentState["retrieved_docs"]` |
+| Metadata filtering | `retrieve_top_k(query, category="fraud")` filters by category inside `tool_search_knowledge_base` — the LLM can pass a `category` argument in its tool call, narrowing retrieval to relevant docs |
+| Hallucination mitigation | If all searches return nothing, the loop appends "No relevant documents found." as the ToolMessage, and the LLM is forced to acknowledge the gap rather than hallucinate. A single-pass RAG fallback fires if tool-calling itself fails. |
 
 ### Why we used it
 The knowledge base has 4 categories (fraud, billing, technical, account). Without metadata filtering, a question about a fraudulent transaction might retrieve a billing FAQ, confusing the LLM. Category-aware retrieval improves precision. The 0.45 cosine threshold is a hard gate — below it, no document is injected, preventing low-quality context from misleading the LLM.
@@ -93,9 +93,9 @@ RAG is the industry-standard solution to LLM hallucination in closed-domain appl
 
 | Bootcamp Topic | What we built |
 |---|---|
-| LangGraph fundamentals (nodes, edges, state) | `StateGraph` with 9 nodes: `chitchat_node`, `account_node`, `banking_services_node`, `intent_node`, `rag_node`, `sentiment_node`, `generate_node`, `escalate_node`, `clarify_node` |
+| LangGraph fundamentals (nodes, edges, state) | `StateGraph` with 9 nodes: `chitchat_node`, `account_node`, `banking_services_node`, `intent_node`, `sentiment_node`, `escalate_node`, `clarify_node`, and `agent_loop_node` (replaced the old `rag_node` + `generate_node` pair with a single ReAct loop node) |
 | Conditional edges | `route_to_node` and `route_banking_services` — conditional routing functions that read `AgentState` fields and select the next node |
-| Deterministic control flows | `banking_services_node` computes financial figures directly from the database and sets `state["response"]` — bypassing `generate_node` entirely so the LLM never touches a number |
+| Deterministic control flows | `banking_services_node` computes financial figures directly from the database and sets `state["response"]` — bypassing `agent_loop_node` entirely so the LLM never touches a number |
 | Memory layers | `pending_calculation` persists multi-turn slot state via `flask.session`; `history` carries the full conversation; `customer_display_name` carries cosmetic identity |
 | Tool integration | Each node calls exactly the tools it needs. `account_node` calls only `tool_get_account_balance` and `tool_get_recent_transactions` |
 | Router agents | `chitchat_node` uses sentence similarity to short-circuit greetings/closings before any downstream node runs; `banking_services_node` intercepts service queries before the intent classifier |
@@ -118,7 +118,7 @@ In banking, a wrong number is not a UX problem — it is a liability. Context en
 | **Tool Use** | 15 `@tool` functions — intent classification, sentiment analysis, KB retrieval, LLM generation, 4 account tools, 5 calculator tools, 4 "my records" tools. Each node selects and calls the right tool for its step |
 | **Planning** | Multi-turn slot filling in `banking_services_node` — when slots are missing (e.g., loan amount for an EMI calculation), the node stores `pending_calculation = {"service": "loan", "slots": {...}, "attempts": 1}` and asks the customer for the missing value. On the next turn, it resumes from where it left off |
 | **Reflection** | Two prompt rules that enforce history-awareness: never repeat a question already asked; treat information provided in earlier turns as known. This is a structured reflection loop operating at the prompt level |
-| **Multi-agent Collaboration** | 9 specialised nodes, each with a single responsibility. `chitchat_node` handles greetings. `account_node` handles authenticated account queries. `banking_services_node` handles service calculators and records. `generate_node` handles open-ended LLM generation. `escalate_node` handles human handoff |
+| **Multi-agent Collaboration** | 9 specialised nodes, each with a single responsibility. `chitchat_node` handles greetings. `account_node` handles authenticated account queries. `banking_services_node` handles service calculators and records. `agent_loop_node` handles open-ended FAQ queries via a ReAct loop (THINK → ACT → OBSERVE). `escalate_node` handles human handoff |
 | **Opt-in UX Monitoring** | A second independent system (`tracker.js` + `struggle_detector.py`) runs a rule-based struggle detection loop on product pages — detect → tip → dismiss — with no ML involvement |
 
 ### Why we used it
@@ -184,7 +184,7 @@ This project implements the **"Conversational Workflow Orchestration"** track fr
 |---|---|
 | Multi-turn assistant | LangGraph graph processes every message through a 9-node pipeline; conversation `history` is passed on every turn |
 | Specialised agent coordination | 9 nodes, each with a single responsibility, connected by conditional routing edges |
-| Search and APIs for grounding | `rag_node` retrieves from a 4-category FAQ knowledge base; `account_node` reads live account data from `accounts.db`; `banking_services_node` reads from `services.db` |
+| Search and APIs for grounding | `agent_loop_node` autonomously retrieves from a 4-category FAQ knowledge base via a THINK→ACT→OBSERVE loop (up to 3 search iterations); `account_node` reads live account data from `accounts.db`; `banking_services_node` reads from `services.db` |
 | Fact-checking / no hallucination | Financial figures (EMI, FD maturity, FX rates, transfer fees) are computed in Python and injected into the state — LLM never produces a number |
 | External tool use | 15 LangChain `@tool` functions covering classification, retrieval, generation, account queries, and 9 banking service operations |
 | Human-in-the-loop | `escalate_node` flags the conversation for human takeover on negative sentiment or dispute keywords |
@@ -197,7 +197,8 @@ This project implements the **"Conversational Workflow Orchestration"** track fr
 | **LangGraph** | Orchestration framework | Stateful, conditional graph execution — nodes can set state that changes downstream routing |
 | **LangChain `@tool`** | Tool definition | Provides schema, type safety, and a standard interface for all agent tools |
 | **Sentence Transformers (`all-MiniLM-L6-v2`)** | Embedding model | Lightweight (80 MB), runs fully offline, strong semantic similarity performance for short texts |
-| **Ollama (`llama3.2:3b`)** | LLM generation | Runs locally — no API cost, no data leaving the machine, suitable for a banking demo |
+| **Ollama (`llama3.2:3b`)** | LLM generation + tool calling | Runs locally — no API cost, no data leaving the machine, suitable for a banking demo |
+| **`langchain_ollama.ChatOllama`** | ReAct agent loop | `ChatOllama.bind_tools([tool_search_knowledge_base])` enables the LLM to emit structured tool calls that the `agent_loop_node` executes iteratively |
 | **SQLite** | Persistence | Zero-config, file-based, sufficient for a demo with 15 customers; `accounts.db`, `services.db`, `chat_history.db`, `knowledge.db`, `ui_events.db` |
 | **Flask** | Web server | Lightweight Python server with session management; integrates cleanly with the Python-native AI stack |
 | **Jinja2** | Template engine | Comes with Flask; enables a clean separation between Python logic and HTML |
@@ -212,9 +213,9 @@ This project implements the **"Conversational Workflow Orchestration"** track fr
 | Transformers & Attention | ✅ Full — embeddings, semantic search, RAG |
 | Introduction to Agentic AI | ✅ Full — reasoning, memory, autonomy, safety, escalation |
 | Mastering LangChain | ✅ Full — tools, prompt templates, output parsers, document loaders, chains |
-| Vector Databases & Agentic RAG | ✅ Full — embedding storage, similarity search, metadata filtering, hallucination mitigation |
+| Vector Databases & Agentic RAG | ✅ Full — embedding storage, similarity search, metadata filtering, hallucination mitigation, ReAct agentic loop with iterative retrieval |
 | Context Engineering | ✅ Full — LangGraph nodes/edges/state, deterministic control flow, memory layers, router agents, reflection |
-| Agentic Design Patterns | ✅ Full — tool use, planning (slot filling), reflection (prompt rules), multi-agent specialisation |
+| Agentic Design Patterns | ✅ Full — tool use, planning (slot filling), reflection (prompt rules), multi-agent specialisation, ReAct loop (`agent_loop_node`) |
 | Agentic AI Protocols | ⚠️ Partial — internal tool registry only; MCP/A2A/ACP not implemented |
 | Model Context Protocol | ❌ Not implemented — architecture is MCP-ready for future extension |
 | Evaluation of Agents | ✅ Full — human feedback, metrics dashboard, model comparison, UX struggle detection |

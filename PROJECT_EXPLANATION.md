@@ -348,7 +348,7 @@ graph.add_conditional_edges("chitchat_node", route_chitchat,
 graph.add_conditional_edges("account_node", route_account,
     {"__end__": END, "intent_node": "intent_node"})
 graph.add_conditional_edges("sentiment_node", route_sentiment,
-    {"escalate_node": "escalate_node", "retrieve_node": "retrieve_node"})
+    {"escalate_node": "escalate_node", "agent_loop_node": "agent_loop_node"})
 ```
 
 ---
@@ -449,11 +449,11 @@ Product pages are where customers fill out enquiry forms. When they repeatedly l
 │                                          ┌───────┴────────┐             │
 │                                    clarify_node    sentiment_node        │
 │                                          │         ┌───────┴───────┐    │
-│                                         END   escalate_node  retrieve_node│
-│                                                    │           │        │
-│                                                   END    generate_node  │
-│                                                               │         │
-│                                                              END        │
+│                                         END   escalate_node  agent_loop_node│
+│                                                    │               │      │
+│                                                   END  (THINK→ACT→OBSERVE loop)
+│                                                              │         │
+│                                                             END        │
 └───────────────────────────┬──────────────────────────────────────────────┘
           calls tools        │
           ─────────────────  │
@@ -543,38 +543,36 @@ category = _intent_to_category(intent, confidence)
 
 ---
 
-### Step 6 — Context-Enhanced ChromaDB Search (NEW)
+### Step 6 — Agent Loop Entry
 
-```python
-# Combine last user message with current for better context
-retrieval_query = f"{last_user_msg} {user_message}"
-# "I cannot log in What is the email?" → finds login/support docs, not phishing
-docs = retrieve_top_k(retrieval_query, k=3, category="billing")
-```
+The message reaches `agent_loop_node`. The LLM is given one tool: `tool_search_knowledge_base`. It decides what to search and when to stop.
 
 ---
 
-### Step 7 — Prompt Construction
-
-`src/prompt_templates.py` builds a prompt with 4 layers:
+### Step 7 — LLM Searches Knowledge Base (may repeat up to 3×)
 
 ```
-[4 Few-shot examples showing desired response style]
-[Last 4 conversation turns for context]
-[Retrieved documents from ChromaDB]
-[Current user question]
-[Rules: use only context, numbered steps for HOW questions, etc.]
+LLM decides: "I need to search for card decline information"
+  → calls tool_search_knowledge_base(query="card declined", category="technical")
+  → 3 relevant docs returned
+
+LLM decides: "I also need login information"
+  → calls tool_search_knowledge_base(query="cannot login app", category="technical")
+  → 3 more docs returned
+
+LLM decides: "I now have enough to answer"
+  → outputs the final response text (no more tool calls)
 ```
+
+Each search result is appended as a `ToolMessage` in the message history, so the LLM sees all prior results when deciding whether to search again.
 
 ---
 
-### Step 8 — LLM Response Generation
+### Step 8 — LLM Generates Final Answer
 
-`src/llm_generator.py` sends the prompt to Ollama:
+When the LLM stops calling tools and outputs text, that text IS the response. It is cleaned (`_clean_response`) and stored in `state["response"]`.
 
-```python
-response = ollama.chat(model="llama3.2:1b", messages=[{"role": "user", "content": prompt}])
-```
+**Fallback:** If tool-calling is unavailable or fails, the node falls back to single-pass RAG (one search, one LLM call) — identical to the old `retrieve_node → generate_node` behaviour.
 
 ---
 
@@ -996,8 +994,7 @@ def build_agent():
     graph.add_node("sentiment_node", sentiment_node)  # DistilBERT SST-2 + keywords
     graph.add_node("clarify_node",   clarify_node)    # "could you rephrase?"
     graph.add_node("escalate_node",  escalate_node)   # human handoff
-    graph.add_node("retrieve_node",  retrieve_node)   # ChromaDB search
-    graph.add_node("generate_node",  generate_node)   # Llama 3.2 via Ollama
+    graph.add_node("agent_loop_node", agent_loop_node)  # Agentic RAG loop
 
     graph.set_entry_point("chitchat_node")
 
@@ -1009,7 +1006,8 @@ def build_agent():
     graph.add_conditional_edges("intent_node", route_intent,
         {"clarify_node": "clarify_node", "sentiment_node": "sentiment_node"})
     graph.add_conditional_edges("sentiment_node", route_sentiment,
-        {"escalate_node": "escalate_node", "retrieve_node": "retrieve_node"})
+        {"escalate_node": "escalate_node", "agent_loop_node": "agent_loop_node"})
+    graph.add_edge("agent_loop_node", END)
 
     return graph.compile()
 
@@ -1277,7 +1275,7 @@ The project satisfies all required technique categories:
 | **Agentic AI — LangGraph** | ✓ | `StateGraph` with 9 nodes, conditional routing, `@tool` functions (`agent_graph.py`) |
 | **Agentic AI — Tool use** | ✓ | 15 `@tool` decorated functions in `agent_tools.py`: ML tools + account tools + 9 banking service tools |
 | **Agentic AI — Multi-turn planning** | ✓ | `banking_services_node` slot filling: missing values saved in `pending_calculation` (Flask session) → resumed next turn |
-| **Agentic AI — Deterministic tool output** | ✓ | All financial figures (EMI, FD maturity, FX rates) computed in Python — `generate_node` bypassed entirely |
+| **Agentic AI — Deterministic tool output** | ✓ | All financial figures (EMI, FD maturity, FX rates) computed in Python — `banking_services_node` bypasses the LLM entirely for financial queries |
 | **Rule-based UX detection** | ✓ | `struggle_detector.py` — pure Python `Counter` over interaction events; no ML involved |
 | **Privacy-by-design** | ✓ | `tracker.js` uses `:placeholder-shown` only; `/track-event` stores nothing without per-page consent |
 | Generative AI (VAE/GAN/Diffusion) | ✗ | Not applicable to a text chatbot |
@@ -1523,19 +1521,17 @@ LangGraph builds stateful, multi-step workflows as graphs — nodes connected by
   escalate     normal
      │            │
      ▼            ▼
-┌──────────┐ ┌───────────────┐
-│ escalate │ │ retrieval_node│
-│   node   │ └───────┬───────┘
-└────┬─────┘         │
-     │               ▼
-     │       ┌───────────────┐
-     │       │ generate_node │
-     │       └───────┬───────┘
+┌──────────┐ ┌────────────────────┐
+│ escalate │ │  agent_loop_node   │
+│   node   │ │  THINK → ACT loop  │
+└────┬─────┘ │  (up to 3 iters)   │
+     │       └───────┬────────────┘
+     │               │
      └───────┬────────┘
             END
 ```
 
-Each node is a Python function that reads and updates a shared state dictionary. Conditional edges route to `escalate_node` or `retrieval_node` based on the sentiment result.
+Each node is a Python function that reads and updates a shared state dictionary. Conditional edges route to `escalate_node` or `agent_loop_node` based on the sentiment result. The `agent_loop_node` uses LLM tool-calling (THINK → ACT → OBSERVE) to autonomously decide what to search and when to respond.
 
 ---
 
@@ -1622,7 +1618,7 @@ run_agent("What's my balance?", history=[], session_customer_id="DEMO001")
     │      → accounts_db.get_account_info("DEMO001")
     │      → returns "Your account balance:\n  Account: **** 2345\n  Balance: $5,432.50"
     │      sets state["response"] = "..."
-    └─ END  (intent_node, sentiment_node, retrieve_node, generate_node never called)
+    └─ END  (intent_node, sentiment_node, agent_loop_node never called)
 ```
 
 This is the key advantage of the agentic graph: **account queries cost zero LLM calls**.
@@ -1651,7 +1647,7 @@ This is the key advantage of the agentic graph: **account queries cost zero LLM 
 | User enumeration | Same error message for wrong customer ID and wrong PIN |
 | Brute force | 5-attempt lockout per customer_id per 15 minutes |
 | Account number | Masked to last 4 digits (`**** 2345`) in all responses and UI |
-| LLM isolation | Account queries short-circuit before `generate_node` — LLM never sees account data |
+| LLM isolation | Account queries short-circuit before `agent_loop_node` — LLM never sees account data |
 
 ### Demo account queries to try (after login)
 ```
@@ -1804,11 +1800,9 @@ Customer types a message
         ↓
   Escalation triggered? ──YES──► [escalate_node] → END
         ↓ NO
-  [retrieve_node]
-  Category-filtered ChromaDB search with context-enhanced query
-        ↓
-  [generate_node]
-  Build structured prompt → Llama 3.2 → response
+  [agent_loop_node]
+  LLM decides which queries to run (THINK → ACT → OBSERVE loop, max 3 iters)
+  Calls tool_search_knowledge_base autonomously with refined queries
         ↓
   END
 ```
@@ -1864,7 +1858,7 @@ Customer types a message
         │    → "Your balance: LKR 245,800.00  Account: **** 2345"
         └──► set response → END  (LLM never called)
         ↓ NO (not an account query, or not logged in)
-  [intent_node] → [sentiment_node] → [retrieve_node] → [generate_node] → END
+  [intent_node] → [sentiment_node] → [agent_loop_node] → END
 ```
 
 **What was added:**
@@ -1930,21 +1924,21 @@ Customer types a message
                                        (saves pending_calculation to Flask session)
                                        next message → resumes from where it left off
         ↓ NO match at all
-  [intent_node] → [sentiment_node] → [retrieve_node] → [generate_node] → END
+  [intent_node] → [sentiment_node] → [agent_loop_node] → END
 ```
 
 **The most important rule added at this stage:**
 
 > **The LLM never generates a financial number.**
 
-EMI, FD maturity, transfer fee, exchange rate, pawning advance — every figure is computed by a deterministic Python formula. The LLM only reaches `generate_node` for general FAQ questions where no number is involved. This gives a 100% accuracy guarantee on all financial figures shown to customers.
+EMI, FD maturity, transfer fee, exchange rate, pawning advance — every figure is computed by a deterministic Python formula. The LLM only reaches `agent_loop_node` for general FAQ questions where no number is involved. This gives a 100% accuracy guarantee on all financial figures shown to customers.
 
 ```python
 # Loan EMI — computed in Python, not by the LLM
 r = annual_rate / 12 / 100
 EMI = principal * r * (1 + r)**n / ((1 + r)**n - 1)
-# Result injected into AgentState["response"] before generate_node is reached
-# generate_node never runs for this message
+# Result injected into AgentState["response"] before agent_loop_node is reached
+# agent_loop_node never runs for this message
 ```
 
 **Multi-turn slot filling introduced:**

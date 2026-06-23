@@ -38,9 +38,10 @@ import src.retriever as _retriever
 from src.retriever import init_retriever
 
 # ── constants ────────────────────────────────────────────────────────────────
-CHITCHAT_THRESHOLD   = 0.75
-CONFIDENCE_THRESHOLD = 0.20
-CATEGORY_THRESHOLD   = 0.50
+CHITCHAT_THRESHOLD      = 0.75
+CONFIDENCE_THRESHOLD    = 0.20
+CATEGORY_THRESHOLD      = 0.50
+AGENT_LOOP_MAX_ITERATIONS = 3   # max ChromaDB searches the LLM may make before forced answer
 
 _GREETING_PROTOTYPES = ["Hello", "Hi there", "Good morning", "Hey", "Greetings", "Hi", "Good evening"]
 _CLOSING_PROTOTYPES  = ["Thank you", "Thanks", "Goodbye", "Bye", "That's all", "Cheers", "Thanks a lot"]
@@ -453,6 +454,27 @@ def _extract_display_name(text: str) -> str | None:
     if len(words) > 4:
         return None
     return " ".join(w.capitalize() for w in words[:3])
+
+
+# ── ChatOllama for tool-calling (agent loop) ──────────────────────────────────
+
+_chat_llm = None
+
+def _get_chat_llm():
+    """Lazily initialise a ChatOllama instance with tool-calling support.
+
+    Uses langchain_ollama.ChatOllama (preferred) or falls back to the
+    langchain_community variant so the import never hard-crashes on startup.
+    temperature=0.3 keeps responses focused without being deterministic.
+    """
+    global _chat_llm
+    if _chat_llm is None:
+        try:
+            from langchain_ollama import ChatOllama as _CO
+        except ImportError:
+            from langchain_community.chat_models import ChatOllama as _CO
+        _chat_llm = _CO(model="llama3.2:3b", temperature=0.3)
+    return _chat_llm
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -976,6 +998,131 @@ def generate_node(state: AgentState) -> AgentState:
     state["response"] = _clean_response(raw)
     return state
 
+def agent_loop_node(state: AgentState) -> AgentState:
+    """Agentic RAG loop — the LLM decides when to search and when to answer.
+
+    Replaces the fixed retrieve_node → generate_node sequence.
+
+    The LLM is bound to tool_search_knowledge_base only. It may call the tool
+    up to AGENT_LOOP_MAX_ITERATIONS times with different or refined queries,
+    then produces its final answer once it has enough grounding context.
+
+    Safety contract:
+    - Only tool_search_knowledge_base is exposed inside the loop.
+    - Account tools, financial calculators, and my-records tools are handled by
+      earlier deterministic nodes and are NEVER reachable from inside this loop.
+    - If tool-calling fails for any reason (ImportError, model error, max
+      iterations exhausted) the node falls back to single-pass RAG — same
+      behaviour as the old retrieve_node → generate_node — so quality never
+      regresses below the previous baseline.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+
+    history      = state.get("history") or []
+    display_name = state.get("customer_display_name")
+
+    history_block = ""
+    if history:
+        lines = [f"Customer: {u}\nAssistant: {b}" for u, b in history[-4:]]
+        history_block = "Conversation so far:\n" + "\n".join(lines) + "\n\n"
+
+    name_context = f"Customer's preferred name: {display_name}\n\n" if display_name else ""
+
+    # Accumulated docs across all iterations (de-duplicated at the end)
+    all_docs: list[str] = []
+    loop_succeeded = False
+
+    # ── Agent loop (LLM-driven tool calling) ──────────────────────────────────
+    try:
+        llm            = _get_chat_llm()
+        llm_with_tools = llm.bind_tools([tool_search_knowledge_base])
+
+        system_content = (
+            PERSONA_PROMPT + "\n\n"
+            + name_context
+            + "You have access to a knowledge base search tool. "
+            "Use it to find information relevant to the customer's question before you respond. "
+            "You may call the search tool multiple times with different or refined queries "
+            "if the first results are not specific enough. "
+            "Once you have found sufficient grounding information, respond directly to the customer.\n\n"
+            + FEW_SHOT_EXAMPLES + "\n\n"
+            + history_block
+        )
+
+        messages = [
+            SystemMessage(content=system_content),
+            HumanMessage(content=state["user_message"]),
+        ]
+
+        for _ in range(AGENT_LOOP_MAX_ITERATIONS):
+            ai_msg = llm_with_tools.invoke(messages)
+            messages.append(ai_msg)
+
+            if not getattr(ai_msg, "tool_calls", None):
+                # LLM chose to answer rather than search again — this IS the response
+                state["response"]       = _clean_response(ai_msg.content or "")
+                state["retrieved_docs"] = list(dict.fromkeys(all_docs))
+                loop_succeeded = True
+                break
+
+            # Execute every tool call the LLM requested in this turn
+            for tc in ai_msg.tool_calls:
+                args     = tc.get("args", {})
+                query    = args.get("query", state["user_message"])
+                category = args.get("category", "")
+
+                docs = tool_search_knowledge_base.invoke({"query": query, "category": category})
+                # Fallback: category filter returned nothing → search all
+                if not docs and category:
+                    docs = tool_search_knowledge_base.invoke({"query": query, "category": ""})
+
+                all_docs.extend(docs)
+                messages.append(ToolMessage(
+                    content="\n\n".join(docs) if docs else "No relevant documents found.",
+                    tool_call_id=tc["id"],
+                ))
+
+    except Exception:
+        pass  # loop_succeeded stays False → fallback runs below
+
+    if loop_succeeded:
+        return state
+
+    # ── Fallback: single-pass RAG (old retrieve_node + generate_node) ─────────
+    # Triggered when: tool-calling unavailable, model error, or max iterations
+    # hit without a final answer. Preserves any docs already collected by the loop.
+    if not all_docs:
+        category = _intent_to_category(
+            state.get("intent") or "unclear",
+            state.get("confidence") or 0.0,
+        )
+        msg = state["user_message"]
+        retrieval_query = (
+            f"{history[-1][0]} {msg}" if history and len(msg.split()) <= 8 else msg
+        )
+        all_docs = tool_search_knowledge_base.invoke(
+            {"query": retrieval_query, "category": category or ""}
+        )
+        if not all_docs and category:
+            all_docs = tool_search_knowledge_base.invoke(
+                {"query": retrieval_query, "category": ""}
+            )
+
+    context = "\n\n".join(dict.fromkeys(all_docs)) if all_docs else "No relevant documents found."
+    prompt  = CHAIN_OF_THOUGHT_TEMPLATE.format(
+        persona=PERSONA_PROMPT,
+        name_context=name_context,
+        few_shot=FEW_SHOT_EXAMPLES,
+        history=history_block,
+        context=context,
+        query=state["user_message"],
+    )
+    raw = tool_generate_response.invoke({"prompt": prompt})
+    state["response"]       = _clean_response(raw)
+    state["retrieved_docs"] = list(dict.fromkeys(all_docs))
+    return state
+
+
 # ── conditional edges ─────────────────────────────────────────────────────────
 
 def route_chitchat(state: AgentState) -> str:
@@ -1004,8 +1151,8 @@ def route_intent(state: AgentState) -> str:
 
 
 def route_sentiment(state: AgentState) -> str:
-    """After sentiment analysis: escalate or continue to retrieval."""
-    return "escalate_node" if state["escalated"] else "retrieve_node"
+    """After sentiment analysis: escalate or enter the agentic RAG loop."""
+    return "escalate_node" if state["escalated"] else "agent_loop_node"
 
 # ── graph assembly ────────────────────────────────────────────────────────────
 
@@ -1019,8 +1166,7 @@ def build_agent():
     graph.add_node("sentiment_node",        sentiment_node)
     graph.add_node("clarify_node",          clarify_node)
     graph.add_node("escalate_node",         escalate_node)
-    graph.add_node("retrieve_node",         retrieve_node)
-    graph.add_node("generate_node",         generate_node)
+    graph.add_node("agent_loop_node",       agent_loop_node)   # replaces retrieve + generate
 
     graph.set_entry_point("chitchat_node")
 
@@ -1034,12 +1180,11 @@ def build_agent():
     graph.add_conditional_edges("intent_node", route_intent,
                                 {"clarify_node": "clarify_node", "sentiment_node": "sentiment_node"})
     graph.add_conditional_edges("sentiment_node", route_sentiment,
-                                {"escalate_node": "escalate_node", "retrieve_node": "retrieve_node"})
+                                {"escalate_node": "escalate_node", "agent_loop_node": "agent_loop_node"})
 
-    graph.add_edge("clarify_node",  END)
-    graph.add_edge("escalate_node", END)
-    graph.add_edge("retrieve_node", "generate_node")
-    graph.add_edge("generate_node", END)
+    graph.add_edge("clarify_node",    END)
+    graph.add_edge("escalate_node",   END)
+    graph.add_edge("agent_loop_node", END)
 
     return graph.compile()
 

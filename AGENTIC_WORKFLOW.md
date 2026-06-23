@@ -39,11 +39,12 @@ Unlike a fixed pipeline where every message goes through every step in order, th
 | Session-closing detection ("ok thanks, that's all") | Explicit phrase set — bypasses LLM entirely |
 | Continuation handling ("yes" after bot closing) | Context-aware keyword matching |
 | Customer display name collection | First-message prompt → regex extraction → Flask session persistence |
-| Warm tone / persona | PERSONA_PROMPT system layer injected into every generate_node call |
+| Warm tone / persona | PERSONA_PROMPT system layer injected into every agent_loop_node call |
 | Intent classification | Fine-tuned DistilBERT on Banking77 (77 classes) |
 | Sentiment analysis + escalation | DistilBERT SST-2 + explicit keyword rules |
-| Knowledge retrieval | ChromaDB + sentence embeddings (RAG) |
-| Response generation | Local Llama 3.2 3B via Ollama |
+| **Agentic RAG loop** | **LLM decides when and what to search; loops up to 3× before answering** |
+| Knowledge retrieval | ChromaDB + sentence embeddings (called by LLM inside agent_loop_node) |
+| Response generation | Local Llama 3.2 3B via Ollama (inside agent_loop_node) |
 | Account balance / transactions | SQLite query on authenticated session |
 | FD / loan / pawning / transfer / FX calculators | Deterministic Python math — LLM never generates figures |
 | "Show both" for logged-in calculator queries | Personal records prepended above calculator result |
@@ -258,21 +259,27 @@ LangGraph requires the state to be a typed dictionary so it can safely merge par
                                                                     │ escalated?                             │
                                                                    YES                                      NO
                                                                     │                                        │
-                                                                   END                      ┌───────────────▼────────────┐
-                                                               (escalate)                   │      retrieve_node         │
-                                                                                            │  • context-enhanced query  │
-                                                                                            │  • ChromaDB category filter│
-                                                                                            │  • fallback: search all    │
-                                                                                            └───────────────┬────────────┘
-                                                                                                            │
-                                                                                            ┌───────────────▼────────────┐
-                                                                                            │      generate_node         │
-                                                                                            │  • PERSONA_PROMPT (tone)   │
-                                                                                            │  • customer name context   │
-                                                                                            │  • few-shot examples       │
-                                                                                            │  • history block           │
-                                                                                            │  • Llama 3.2 3B via Ollama │
-                                                                                            └───────────────┬────────────┘
+                                                                   END                      ┌───────────────▼────────────────────────┐
+                                                               (escalate)                   │          agent_loop_node               │
+                                                                                            │  ┌─────────────────────────────────┐   │
+                                                                                            │  │  LLM + tool_search_knowledge_base│   │
+                                                                                            │  │  bound via bind_tools()         │   │
+                                                                                            │  └───────────────┬─────────────────┘   │
+                                                                                            │                  │                     │
+                                                                                            │      ┌───────────▼──────────────┐      │
+                                                                                            │      │ LLM calls search tool?   │      │
+                                                                                            │      └──────┬────────┬──────────┘      │
+                                                                                            │            YES       NO                │
+                                                                                            │             │         │               │
+                                                                                            │    Execute search  Final answer        │
+                                                                                            │    add docs to     → END               │
+                                                                                            │    context                            │
+                                                                                            │    loop back ◄──────────┘             │
+                                                                                            │    (max 3×)                           │
+                                                                                            │                                       │
+                                                                                            │  Fallback if tool-calling fails:       │
+                                                                                            │  single-pass RAG + generate           │
+                                                                                            └───────────────────────────────────────┘
                                                                                                             │
                                                                                                            END
 ```
@@ -291,11 +298,10 @@ LangGraph requires the state to be a typed dictionary so it can safely merge par
 | `intent_node` | confidence < 0.20 AND no history | `clarify_node` |
 | `intent_node` | otherwise | `sentiment_node` |
 | `sentiment_node` | `escalated` is True | `escalate_node` |
-| `sentiment_node` | `escalated` is False | `retrieve_node` |
-| `retrieve_node` | always | `generate_node` |
+| `sentiment_node` | `escalated` is False | `agent_loop_node` |
+| `agent_loop_node` | always | `END` |
 | `clarify_node` | always | `END` |
 | `escalate_node` | always | `END` |
-| `generate_node` | always | `END` |
 
 ---
 
@@ -398,29 +404,53 @@ Two-layer approach:
 
 ---
 
-### `retrieve_node`
-**Purpose:** Search the ChromaDB knowledge base for relevant FAQ documents.
+### `agent_loop_node`
+**Purpose:** Agentic RAG loop — the LLM decides when to search the knowledge base and when it has enough information to answer. Replaces the former fixed `retrieve_node → generate_node` sequence.
 
-**Context-enhanced query:** Short follow-ups (≤8 words) with prior history → prepend last 1–2 user messages. Contact queries → override category to "account". Category filtering → fallback to all if no results.
+**How the loop works:**
 
----
+```
+agent_loop_node entry
+        │
+  LLM receives: PERSONA_PROMPT + name_context + few-shot examples
+               + conversation history + customer message
+               + tool_search_knowledge_base bound via bind_tools()
+        │
+        ▼
+  ┌────────────────────────────┐
+  │  LLM decides next action   │◄──────────────────────┐
+  └────────────┬───────────────┘                       │
+               │                                        │
+    ┌──────────┴──────────┐                            │
+    │                     │                            │
+  Tool call?           Final answer                    │
+    │                     │                            │
+    ▼                     ▼                            │
+  Execute            _clean_response()        loop back (up to 3×)
+  tool_search        → state["response"]               │
+  _knowledge_base()  → END                             │
+    │                                                  │
+  Append docs to all_docs                              │
+  Append ToolMessage to messages ──────────────────────┘
+```
 
-### `generate_node`
-**Purpose:** Build the final prompt and call Llama 3.2 3B via Ollama.
-
-Assembles a structured prompt in this exact order:
+**Prompt structure inside the loop:**
 
 | Layer | Content |
 |---|---|
-| **[1] PERSONA_PROMPT** | Tone/persona system layer (see Section 11) |
-| **[2] name_context** | `"Customer's preferred name: Alice\n\n"` — or empty if no name yet |
-| **[3] FEW_SHOT_EXAMPLES** | 5 hand-crafted examples covering all 4 KB categories + frustrated customer |
-| **[4] history block** | Last 4 conversation turns formatted as `Customer: / Assistant:` |
-| **[5] context** | Top-3 document chunks from ChromaDB |
-| **[6] query** | Current customer message |
-| **[7] Rules + Answer:** | Output constraints (answer only from context, numbered steps for how-to, etc.) |
+| **[1] SystemMessage** | PERSONA_PROMPT + name_context + tool-use instruction |
+| **[2] FEW_SHOT_EXAMPLES** | 5 hand-crafted examples (same as before) |
+| **[3] history block** | Last 4 conversation turns |
+| **[4] HumanMessage** | Current customer message |
+| **[5] AIMessage** (loop) | LLM's tool call decision |
+| **[6] ToolMessage** (loop) | ChromaDB search results |
+| **[7+] repeat** | LLM may call again with refined query |
 
-The raw LLM output is cleaned (strips internal reasoning markers like "Answer:", "Step 4 -") before being stored in state.
+**Max iterations:** `AGENT_LOOP_MAX_ITERATIONS = 3`. If the LLM still hasn't answered after 3 searches, the node falls back to single-pass RAG (identical to the old behaviour) to guarantee a response is always produced.
+
+**Safety constraint:** Only `tool_search_knowledge_base` is exposed inside the loop. Account tools, financial calculators, and my-records tools are handled by earlier deterministic nodes and are never reachable from inside the loop.
+
+**Fallback path:** If `ChatOllama` is unavailable, tool-calling fails, or the model errors, the except block executes single-pass RAG using all docs already collected, so quality never regresses below the previous baseline.
 
 ---
 
@@ -1341,6 +1371,28 @@ Rules:
 
 ---
 
+### Challenge 14 — Replacing the fixed retrieve→generate sequence with a true agent loop
+
+**Problem:** `retrieve_node` always made exactly one ChromaDB search with one fixed query, then handed results to `generate_node` which made one LLM call. A customer asking a question that spanned two topics (e.g., "My card was declined and I also can't log in") received a single search that partially matched only one topic, resulting in an incomplete answer. The routing decision (what to search) was hardcoded — the LLM had no say.
+
+**Goal:** Let the LLM decide how many searches to run and what query to use, rather than locking it to one fixed search.
+
+**Approach — `agent_loop_node` with `bind_tools()`:**
+- `ChatOllama` from `langchain_ollama` supports tool calling via `.bind_tools()`. Llama 3.2 3B supports function calling natively through Ollama's API.
+- Only `tool_search_knowledge_base` is exposed inside the loop — no account tools, no financial calculators.
+- The LLM calls the tool as many times as needed (up to `AGENT_LOOP_MAX_ITERATIONS = 3`), accumulating docs across iterations.
+- Each tool result is appended as a `ToolMessage` in the messages list, so the LLM sees all prior results when deciding whether to search again.
+- When the LLM stops calling tools and outputs text, that text is the final response.
+
+**Safety considerations addressed before implementation:**
+- Financial calculators and account tools are not exposed — they remain in earlier deterministic nodes.
+- Hard ceiling of 3 iterations prevents infinite loops.
+- A complete fallback (single-pass RAG via old `retrieve_node` + `generate_node` logic) is in the `except` block — if `ChatOllama` unavailable or tool-calling fails, the node behaves exactly as before.
+
+**Result:** Multi-topic queries now receive multiple targeted searches and more complete answers. Single-topic queries still work correctly — the LLM typically searches once and answers immediately.
+
+---
+
 ## 19. LLM Model Comparison — llama3.2:1b vs llama3.2:3b
 
 The same 15-test suite was run against both models using the identical prompt (PERSONA_PROMPT + few-shot + context + rules). Tests covered: happy customer, frustrated customer, bad news delivery, number accuracy, unwelcome fact plainness, contact details, how-to instructions, multi-turn name usage, and session closing.
@@ -1529,3 +1581,132 @@ Tips slide in from the bottom-right (CSS `@keyframes tipSlide`), auto-dismiss af
 - The enquiry form (`id="enquiry-form"`) uses `e.preventDefault()` — it never submits to a server. It exists solely as a realistic test surface for the monitoring system.
 - `TRACKER_CONFIG` is rendered server-side; `consented` is a Python bool stringified to `true`/`false` — it cannot be tampered with after the page loads (it only controls whether tracker.js sets up its listeners, not what the server stores).
 - `ui_session_id` is a server-generated UUID. It is never user-supplied and cannot be influenced by chat input.
+
+---
+
+## 21. Agent Loop — Agentic RAG
+
+### 21.1 What Changed
+
+The fixed two-node sequence `retrieve_node → generate_node` has been replaced by a single `agent_loop_node`. The routing table now reads:
+
+| Before | After |
+|---|---|
+| `sentiment_node` → `retrieve_node` | `sentiment_node` → `agent_loop_node` |
+| `retrieve_node` → `generate_node` (fixed edge) | (no separate retrieve node) |
+| `generate_node` → `END` | `agent_loop_node` → `END` |
+
+The total node count stays at 9 (chitchat, account, banking_services, intent, sentiment, clarify, escalate, **agent_loop**, and the compiled graph still has the same logical paths).
+
+### 21.2 Why the Old Design Was Limiting
+
+The old `retrieve_node` was a single-pass function:
+
+```python
+# Old retrieve_node (pseudocode)
+docs = chromadb.search(query=user_message, category=intent_category)
+state["retrieved_docs"] = docs
+# → then generate_node built one prompt, made one LLM call
+```
+
+Limitations:
+1. **One fixed query.** The query was always `last_message + current_message`. The LLM had no say.
+2. **One shot.** If the first search missed the right document, no recovery was possible.
+3. **Two separate nodes** for what is logically one task (search → answer).
+
+### 21.3 How the Agent Loop Works
+
+```python
+AGENT_LOOP_MAX_ITERATIONS = 3
+
+def agent_loop_node(state):
+    llm = ChatOllama(model="llama3.2:3b", temperature=0.3)
+    llm_with_tools = llm.bind_tools([tool_search_knowledge_base])
+
+    messages = [SystemMessage(system_prompt), HumanMessage(user_message)]
+    all_docs = []
+
+    for _ in range(AGENT_LOOP_MAX_ITERATIONS):
+        ai_msg = llm_with_tools.invoke(messages)
+        messages.append(ai_msg)
+
+        if not ai_msg.tool_calls:
+            # LLM decided to answer — this is the final response
+            state["response"] = clean(ai_msg.content)
+            return state
+
+        # LLM called search tool — execute it and loop
+        for tc in ai_msg.tool_calls:
+            docs = tool_search_knowledge_base(query=tc.args["query"], ...)
+            all_docs.extend(docs)
+            messages.append(ToolMessage(content=docs, tool_call_id=tc["id"]))
+
+    # Max iterations hit → fallback to single-pass RAG
+    ...
+```
+
+### 21.4 Concrete Example — Multi-Topic Query
+
+**Customer:** "My card was declined and I also can't log in to the app"
+
+**Old behaviour (single search):**
+```
+Query: "card declined cannot log in app"
+Result: 2 card docs + 1 login doc (mixed, lower precision)
+LLM answers from a mix of slightly relevant docs
+```
+
+**New behaviour (agent loop):**
+```
+Iteration 1:
+  LLM calls: search("card declined", category="technical")
+  Result: 3 card decline docs ✓
+
+Iteration 2:
+  LLM calls: search("cannot log in app", category="technical")
+  Result: 3 app login docs ✓
+
+LLM has 6 targeted docs → answers both issues in one response
+```
+
+### 21.5 What the LLM Can and Cannot Do Inside the Loop
+
+| Allowed | Not allowed |
+|---|---|
+| Call `tool_search_knowledge_base` with any query or category | Call account balance or transaction tools |
+| Search the same category multiple times with different queries | Call financial calculators |
+| Search all categories (pass `category=""`) | Access `session_customer_id` or any auth data |
+| Decide to answer without searching (0 searches) | Produce financial figures — not reachable from loop |
+| Use any or all of the accumulated docs in the response | Loop more than 3 times |
+
+### 21.6 Fallback Guarantee
+
+The entire loop is wrapped in a `try/except`:
+
+```python
+try:
+    # tool-calling loop ...
+except Exception:
+    pass  # loop_succeeded = False
+
+if not loop_succeeded:
+    # Fallback: single-pass RAG using all docs collected so far
+    # Identical to old retrieve_node + generate_node behaviour
+```
+
+This means:
+- If `langchain_ollama` is not installed → fallback runs
+- If the Ollama model doesn't support tool calls → fallback runs
+- If tool calls return errors → fallback runs with whatever docs were collected
+- If max iterations hit without a final answer → fallback runs
+
+Quality never regresses below the pre-loop baseline.
+
+### 21.7 Constants and Configuration
+
+| Constant | Value | Location |
+|---|---|---|
+| `AGENT_LOOP_MAX_ITERATIONS` | `3` | `src/agent_graph.py` top-level constant |
+| Model name | `llama3.2:3b` | `_get_chat_llm()` |
+| Temperature | `0.3` | `_get_chat_llm()` — focused but not fully deterministic |
+| Tool exposed | `tool_search_knowledge_base` only | `agent_loop_node` via `bind_tools()` |
