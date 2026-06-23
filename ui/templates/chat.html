@@ -263,7 +263,7 @@
         <span class="acct-no"   id="hdr-acct"></span>
         <span class="acct-type" id="hdr-type"></span>
         <span class="acct-bal"  id="hdr-bal"></span>
-        <button class="logout-btn" onclick="doLogout()">Log out</button>
+        <button type="button" class="logout-btn" onclick="doLogout()">Log out</button>
     </div>
 
     <!-- Chat Area -->
@@ -271,7 +271,6 @@
         <div class="chat-wrapper">
             <div class="chat-page-title">
                 <h1>Customer Support</h1>
-                <a href="/dashboard" id="dashboard-link">Analytics Dashboard</a>
             </div>
 
             <div id="app">
@@ -285,7 +284,7 @@
                 <div id="input-row">
                     <input id="user-input" type="text" placeholder="Type your message…"
                            onkeydown="if(event.key==='Enter') sendMessage()"/>
-                    <button id="send-btn" onclick="sendMessage()">Send</button>
+                    <button type="button" id="send-btn" onclick="sendMessage()">Send</button>
                 </div>
             </div>
         </div>

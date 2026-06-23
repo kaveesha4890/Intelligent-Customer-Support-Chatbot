@@ -660,8 +660,12 @@ def banking_services_node(state: AgentState) -> AgentState:
                 if "error" in result:
                     state["response"] = personal_prefix + result["error"]
                 else:
-                    url_suffix = _append_service_url(
-                        service, slots, state.get("host_url") or ""
+                    # Only link to the product page when no existing records were shown.
+                    # If personal_prefix is set the customer already holds this product —
+                    # "apply at branch" would be redundant.
+                    url_suffix = (
+                        _append_service_url(service, slots, state.get("host_url") or "")
+                        if not personal_prefix else ""
                     )
                     state["response"] = (
                         personal_prefix
@@ -758,8 +762,12 @@ def banking_services_node(state: AgentState) -> AgentState:
                 if "error" in result:
                     state["response"] = personal_prefix + result["error"]
                 else:
-                    url_suffix = _append_service_url(
-                        service, slots, state.get("host_url") or ""
+                    # Only link to the product page when no existing records were shown.
+                    # If personal_prefix is set the customer already holds this product —
+                    # "apply at branch" would be redundant.
+                    url_suffix = (
+                        _append_service_url(service, slots, state.get("host_url") or "")
+                        if not personal_prefix else ""
                     )
                     state["response"] = (
                         personal_prefix
@@ -851,13 +859,6 @@ def banking_services_node(state: AgentState) -> AgentState:
                     "This has been flagged for immediate review by a human specialist. "
                     "Please do not take any action — someone will contact you shortly."
                 )
-
-            # Append product page link (deterministic — never LLM-generated)
-            _rec_key = _MY_RECORDS_URL_KEY.get(service_key)
-            if _rec_key:
-                _rec_url = get_site_url(_rec_key, state.get("host_url") or "")
-                if _rec_url:
-                    result += f"\n\nView product details and rates here: {_rec_url}"
 
             state["response"]            = result
             state["intent"]              = f"my_{service_key}"
