@@ -666,3 +666,147 @@ input[type="password"]::placeholder { letter-spacing: 0; font-size: 14px; }
   color: rgba(255,255,255,.4);
 }
 
+/* ── Monitoring section layout helpers ───────────────────── */
+.monitoring-outer       { padding-bottom: 0; }
+.monitoring-form-outer  { padding-top: 0; padding-bottom: 0; }
+.col-full               { grid-column: 1 / -1; }
+.form-display-contents  { display: contents; }
+
+/* ── Opt-in Monitoring: Consent Banner ───────────────────── */
+.consent-banner {
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+}
+.consent-banner-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+.consent-banner-body { flex: 1; }
+.consent-banner-body strong { display: block; font-weight: 700; margin-bottom: 3px; color: var(--navy); }
+.consent-banner-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.consent-btn-yes {
+  padding: 6px 16px;
+  background: var(--navy-mid);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.consent-btn-yes:hover { background: var(--accent); }
+.consent-btn-no {
+  padding: 6px 16px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.consent-btn-no:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ── Opt-in Monitoring: Struggle Tip ────────────────────── */
+.struggle-tip {
+  display: none;
+  background: var(--navy);
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 10px;
+  position: relative;
+  box-shadow: var(--shadow-md);
+  animation: tipSlide .2s ease;
+}
+.struggle-tip.visible { display: block; }
+@keyframes tipSlide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.struggle-tip::before {
+  content: '💡 ';
+}
+
+/* ── Opt-in Monitoring: Enquiry Form ────────────────────── */
+.enquiry-form-wrap {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  margin-top: 24px;
+}
+.enquiry-form-wrap h3 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 4px;
+}
+.enquiry-form-wrap .form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+#enquiry-form .form-row { margin-bottom: 14px; }
+#enquiry-form label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 5px;
+}
+#enquiry-form input,
+#enquiry-form select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  color: var(--text);
+  background: #FAFBFC;
+  outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+#enquiry-form input:focus,
+#enquiry-form select:focus {
+  border-color: var(--navy-mid);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(27,58,92,.07);
+}
+#enquiry-form .btn-enquire {
+  width: 100%;
+  padding: 11px;
+  background: var(--navy-mid);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .2s;
+  margin-top: 6px;
+}
+#enquiry-form .btn-enquire:hover { background: var(--accent); }
+.tracking-notice {
+  font-size: 11px;
+  color: var(--text-subtle);
+  margin-top: 10px;
+  line-height: 1.5;
+}

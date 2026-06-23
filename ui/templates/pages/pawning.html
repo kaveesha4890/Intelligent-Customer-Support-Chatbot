@@ -71,4 +71,53 @@
         </div>
     </div>
 </div>
+
+{% include 'partials/_consent_banner.html' %}
+{% if consent_status %}
+<div class="product-content monitoring-form-outer">
+    <div class="col-full">
+        <div class="enquiry-form-wrap">
+            <h3>Express Interest — Gold Pawning</h3>
+            <p class="form-hint">Leave your details and a representative will call you back. No commitment required.</p>
+            <form id="enquiry-form" autocomplete="off">
+                <div class="form-row">
+                    <label for="full_name">Full Name</label>
+                    <input type="text" id="full_name" name="full_name" placeholder="As per NIC">
+                </div>
+                <div class="form-row">
+                    <label for="phone">Mobile Number</label>
+                    <input type="tel" id="phone" name="phone" placeholder="e.g. 0771234567">
+                </div>
+                <div class="form-row">
+                    <label for="weight_grams">Gold Weight (grams)</label>
+                    <input type="number" id="weight_grams" name="weight_grams" placeholder="e.g. 10.5" min="0" step="0.1">
+                </div>
+                <div class="form-row">
+                    <label for="carat">Gold Purity</label>
+                    <select id="carat" name="carat">
+                        <option value="" disabled selected>Select carat</option>
+                        <option value="18">18 Carat</option>
+                        <option value="22">22 Carat</option>
+                        <option value="24">24 Carat</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-enquire">Submit Enquiry</button>
+            </form>
+            <p class="tracking-notice">🔒 We record field names only — your typed values are never captured or stored.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    window.TRACKER_CONFIG = {
+        page:      "{{ page_key }}",
+        consented: {{ 'true' if consent_status else 'false' }},
+        sessionId: "{{ ui_session_id }}"
+    };
+</script>
+<script src="{{ url_for('static', filename='js/tracker.js') }}"></script>
 {% endblock %}

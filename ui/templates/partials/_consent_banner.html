@@ -1,0 +1,27 @@
+{% if consent_status is none %}
+<div class="product-content monitoring-outer">
+    <div class="col-full">
+        <div class="consent-banner">
+            <span class="consent-banner-icon">📊</span>
+            <div class="consent-banner-body">
+                <strong>Help us improve your experience</strong>
+                We'd like to anonymously track how you interact with this page (field names only — never values) to identify and fix usability issues.
+                <div class="consent-banner-actions">
+                    <form method="POST" action="/set-consent" class="form-display-contents">
+                        <input type="hidden" name="page_key" value="{{ page_key }}">
+                        <input type="hidden" name="choice"   value="yes">
+                        <input type="hidden" name="next"     value="{{ request.path }}">
+                        <button type="submit" class="consent-btn-yes">Yes, that's fine</button>
+                    </form>
+                    <form method="POST" action="/set-consent" class="form-display-contents">
+                        <input type="hidden" name="page_key" value="{{ page_key }}">
+                        <input type="hidden" name="choice"   value="no">
+                        <input type="hidden" name="next"     value="{{ request.path }}">
+                        <button type="submit" class="consent-btn-no">No thanks</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

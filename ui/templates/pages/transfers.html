@@ -107,4 +107,53 @@
         &#128274; <strong>DEMO MODE — Simulated Data Only.</strong> All fees and FX rates are simulated for academic / demonstration purposes. FX rates shown are indicative and not live market rates.
     </div>
 </div>
+
+{% include 'partials/_consent_banner.html' %}
+{% if consent_status %}
+<div class="product-content monitoring-form-outer">
+    <div class="col-full">
+        <div class="enquiry-form-wrap">
+            <h3>Express Interest — Money Transfer</h3>
+            <p class="form-hint">Leave your details and a representative will call you back. No commitment required.</p>
+            <form id="enquiry-form" autocomplete="off">
+                <div class="form-row">
+                    <label for="full_name">Full Name</label>
+                    <input type="text" id="full_name" name="full_name" placeholder="As per NIC">
+                </div>
+                <div class="form-row">
+                    <label for="phone">Mobile Number</label>
+                    <input type="tel" id="phone" name="phone" placeholder="e.g. 0771234567">
+                </div>
+                <div class="form-row">
+                    <label for="amount">Transfer Amount (LKR)</label>
+                    <input type="number" id="amount" name="amount" placeholder="e.g. 50000" min="0">
+                </div>
+                <div class="form-row">
+                    <label for="transfer_type">Transfer Type</label>
+                    <select id="transfer_type" name="transfer_type">
+                        <option value="" disabled selected>Select transfer type</option>
+                        <option value="local_slips">Local — SLIPS</option>
+                        <option value="local_ceft">Local — CEFT</option>
+                        <option value="foreign_wire">Foreign Wire Transfer</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn-enquire">Submit Enquiry</button>
+            </form>
+            <p class="tracking-notice">🔒 We record field names only — your typed values are never captured or stored.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    window.TRACKER_CONFIG = {
+        page:      "{{ page_key }}",
+        consented: {{ 'true' if consent_status else 'false' }},
+        sessionId: "{{ ui_session_id }}"
+    };
+</script>
+<script src="{{ url_for('static', filename='js/tracker.js') }}"></script>
 {% endblock %}

@@ -32,10 +32,11 @@
                 </span>
                 <div class="nav-drop-menu">
                     <div class="nav-drop-section">Loans</div>
-                    <a href="/loans/personal" {% block active_loan_personal %}{% endblock %}>Personal Loan</a>
-                    <a href="/loans/housing"  {% block active_loan_housing  %}{% endblock %}>Housing Loan</a>
-                    <a href="/loans/vehicle"  {% block active_loan_vehicle  %}{% endblock %}>Vehicle Loan</a>
-                    <a href="/loans/education"{% block active_loan_education%}{% endblock %}>Education Loan</a>
+                    <a href="/loans/personal"  {% block active_loan_personal  %}{% endblock %}>Personal Loan</a>
+                    <a href="/loans/housing"   {% block active_loan_housing   %}{% endblock %}>Housing Loan</a>
+                    <a href="/loans/vehicle"   {% block active_loan_vehicle   %}{% endblock %}>Vehicle Loan</a>
+                    <a href="/loans/education" {% block active_loan_education %}{% endblock %}>Education Loan</a>
+                    <a href="/loans/business"  {% block active_loan_business  %}{% endblock %}>Business Loan</a>
                     <div class="nav-drop-divider"></div>
                     <a href="/deposits/fixed-deposits" {% block active_fd      %}{% endblock %}>Fixed Deposits</a>
                     <a href="/services/pawning"        {% block active_pawning %}{% endblock %}>Gold Pawning</a>
@@ -58,5 +59,6 @@
         <span class="demo-badge" style="font-size:11px;padding:4px 12px;">&#128274; DEMO MODE &mdash; Simulated Data Only</span>
     </footer>
 
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

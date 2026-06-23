@@ -2,6 +2,7 @@
 {% block title %}Personal Loan — AutoTrust Bank{% endblock %}
 {% block meta_description %}AutoTrust Bank Personal Loan — {{ rate.annual_rate }}% p.a., up to {{ rate.max_tenure_months }} months. Borrow for any personal need with fast approval.{% endblock %}
 {% block active_loan_personal %}class="active"{% endblock %}
+{% block nav_products_class %}active{% endblock %}
 
 {% block content %}
 <!-- Hero -->
@@ -68,4 +69,50 @@
         </div>
     </div>
 </div>
+
+{% include 'partials/_consent_banner.html' %}
+
+<!-- ── Enquiry Form (placeholder — no data submitted) ──────── -->
+{% if consent_status %}
+<div class="product-content monitoring-form-outer">
+    <div class="col-full">
+        <div class="enquiry-form-wrap">
+            <h3>Express Interest — Personal Loan</h3>
+            <p class="form-hint">Leave your details and a representative will call you back. No commitment required.</p>
+            <form id="enquiry-form" autocomplete="off">
+                <div class="form-row">
+                    <label for="full_name">Full Name</label>
+                    <input type="text" id="full_name" name="full_name" placeholder="As per NIC">
+                </div>
+                <div class="form-row">
+                    <label for="phone">Mobile Number</label>
+                    <input type="tel" id="phone" name="phone" placeholder="e.g. 0771234567">
+                </div>
+                <div class="form-row">
+                    <label for="loan_amount">Loan Amount (LKR)</label>
+                    <input type="number" id="loan_amount" name="loan_amount" placeholder="e.g. 500000" min="0">
+                </div>
+                <div class="form-row">
+                    <label for="tenure_months">Tenure (months, max {{ rate.max_tenure_months }})</label>
+                    <input type="number" id="tenure_months" name="tenure_months" placeholder="e.g. 36" min="1" max="{{ rate.max_tenure_months }}">
+                </div>
+                <button type="submit" class="btn-enquire">Submit Enquiry</button>
+            </form>
+            <p class="tracking-notice">🔒 We record field names only — your typed values are never captured or stored.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    window.TRACKER_CONFIG = {
+        page:      "{{ page_key }}",
+        consented: {{ 'true' if consent_status else 'false' }},
+        sessionId: "{{ ui_session_id }}"
+    };
+</script>
+<script src="{{ url_for('static', filename='js/tracker.js') }}"></script>
 {% endblock %}

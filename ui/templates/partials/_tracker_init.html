@@ -1,0 +1,10 @@
+{% block extra_scripts %}
+<script>
+    window.TRACKER_CONFIG = {
+        page:      "{{ page_key }}",
+        consented: {{ 'true' if consent_status else 'false' }},
+        sessionId: "{{ ui_session_id }}"
+    };
+</script>
+<script src="{{ url_for('static', filename='js/tracker.js') }}"></script>
+{% endblock %}
