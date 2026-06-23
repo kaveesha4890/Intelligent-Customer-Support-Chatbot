@@ -46,6 +46,7 @@
 21. [Agentic AI — Implemented Architecture](#21-agentic-ai--implemented-architecture)
 22. [Account Banking Feature](#22-account-banking-feature)
 23. [Fixed Pipeline vs Agentic — Side-by-Side Comparison](#23-fixed-pipeline-vs-agentic--side-by-side-comparison)
+24. [How the Chatbot Response Evolved — Stage by Stage](#24-how-the-chatbot-response-evolved--stage-by-stage)
 
 ---
 
@@ -103,11 +104,13 @@ This project combines:
 | **Banking77 Dataset (mteb/banking77)** | Intent training labels | 77 real banking support categories |
 | **SentenceTransformers (MiniLM-L6-v2)** | Text embeddings for retrieval + greeting detection | Fast, accurate, 384-dim vectors |
 | **ChromaDB** | Vector store for knowledge base | HNSW index, category filtering, dynamic updates, no rebuild needed |
-| **SQLite** | Chat history + feedback storage | Built into Python, no server, zero setup |
+| **SQLite** (`accounts.db`, `services.db`, `chat_history.db`, `knowledge.db`, `ui_events.db`) | Multiple stores: accounts, rate cards, conversations, embeddings, interaction events | Built into Python, no server, zero setup |
 | **Flask** | Web UI server | Full control over HTML/CSS/JS, supports custom feedback buttons |
 | **LangChain** | Document loading & chunking | Clean utilities for splitting text files |
 | **Ollama** | Local LLM runtime | Runs Llama 3.2 locally; no cloud API key |
-| **Llama 3.2 (1B)** | Response generation | Small enough to run locally on 2GB GPU |
+| **Llama 3.2 (3B)** | Response generation | Upgraded from 1B — better context adherence on structured prompts |
+| **Vanilla JS (`tracker.js`)** | Client-side opt-in monitoring | Privacy-first: uses `:placeholder-shown` only — `.value` is never read |
+| **Python `re` (regex)** | Slot extraction | Deterministic extraction of amounts, tenures, carats from freeform text |
 | **NLTK + rouge_score** | Evaluation metrics | Standard NLP evaluation (BLEU, ROUGE-L) |
 
 ---
@@ -365,6 +368,42 @@ graph.add_conditional_edges("sentiment_node", route_sentiment,
 To demonstrate a realistic banking AI assistant that can answer personal account queries ("what's my balance?", "show my recent transactions") securely. All data is completely simulated — 15 fictional customers with 5 transactions each, using a "DEMO" account number prefix so it is visually obvious no real data is involved.
 
 **Security design:** The authenticated `customer_id` is stored exclusively in the Flask server-side session and passed into the LangGraph state as `session_customer_id`. The LLM **never sees or controls this value** — the `account_node` reads it directly from state and calls the database function. This prevents prompt injection from causing the agent to look up another customer's account.
+
+---
+
+### 4.16 New Feature: Banking Services — 9 Product Pages + Calculators + My-Records
+
+| | Before | After |
+|--|--------|-------|
+| **What** | No product information pages | 9 public product pages: 5 loan types, FD, pawning, cards, transfers |
+| **New files** | — | `src/services_db.py`, `src/site_routes.py`, `src/slot_extraction.py`, `seed_services.py`, `services.db`, `ui/templates/pages/*.html` |
+| **Chatbot** | No awareness of FD/loan/pawning/cards/transfers | `banking_services_node` (9th graph node) handles all service queries |
+| **Calculators** | Not available | FD interest, loan EMI, pawning advance, transfer fee, FX rate — Python maths, LLM never generates figures |
+| **My records** | Not available | "Show my FDs / loans / cards / pawning" answered from SQLite (login required) |
+| **Multi-turn** | N/A | Missing slots trigger a question → next turn fills the gap → calculation runs |
+
+**Why added:**
+
+Banking customers regularly ask "what is the FD rate?", "how much will my EMI be?", "show my loans" before making financial decisions. The 9 product pages give them a visual rate-card reference. The chatbot calculators let them ask questions naturally in plain language. The `banking_services_node` deterministically computes all figures in Python — the LLM never produces a number — maintaining the same trust model as the account feature.
+
+**Information/execution boundary:** The node only informs and calculates. It never initiates a transaction, opens an account, or modifies any record. All `services_db.py` functions are read-only SELECT queries.
+
+---
+
+### 4.17 New Feature: Opt-in Customer Monitoring (Product Pages)
+
+| | Before | After |
+|--|--------|-------|
+| **What** | No interaction monitoring on product pages | Per-page opt-in consent banner → interaction event tracking → context-aware tips |
+| **New files** | — | `src/ui_events_db.py`, `src/struggle_detector.py`, `ui/static/js/tracker.js`, `ui/templates/partials/_consent_banner.html`, `ui_events.db` |
+| **Privacy** | N/A | Field VALUES are never read, captured, or transmitted — only field names and empty/submit events |
+| **Consent** | N/A | Per-page, per-login-session. Cleared on logout. "No thanks" respected immediately |
+| **Struggle detection** | N/A | Rule-based only (no ML/LLM): ≥2 blur_empty or submit_fail on same field → contextual tip |
+| **Tips** | N/A | Returned in same `/track-event` response; slide in bottom-right, auto-dismiss in 7 s |
+
+**Why added:**
+
+Product pages are where customers fill out enquiry forms. When they repeatedly leave a field empty or fail to submit, it usually means they're confused about what to enter (e.g., loan amount format, FD tenure options). The struggle detector catches this silently and offers a precise, field-specific hint — without requiring the customer to ask for help. The system is strictly opt-in, per-page, and never collects what a customer typed.
 
 ---
 
@@ -838,16 +877,23 @@ Intelligent-Customer-Support-Chatbot/
 │
 ├── src/                          ← Core chatbot logic
 │   │
-│   │  ── Agentic AI (LangGraph) — agentic_ai branch ──────────────────
+│   │  ── Agentic AI (LangGraph) ───────────────────────────────────────
 │   ├── agent_state.py            ← AgentState TypedDict (shared state for all nodes)
-│   ├── agent_graph.py            ← LangGraph StateGraph: nodes, edges, run_agent()
-│   ├── agent_tools.py            ← @tool decorated functions (intent, sentiment, retrieval, LLM, banking)
+│   ├── agent_graph.py            ← LangGraph StateGraph: 9 nodes, edges, run_agent()
+│   ├── agent_tools.py            ← @tool functions: ML tools + account tools + 9 banking service tools
 │   ├── accounts_db.py            ← SQLite banking demo: verify_pin(), get_account_info(), get_transactions()
+│   ├── services_db.py            ← SQLite banking services: rate cards + customer product records
+│   ├── site_routes.py            ← SITE_ROUTES dict — deterministic product page URL lookup
+│   ├── slot_extraction.py        ← Regex-based extractors (amount, tenure, carat, loan_type, etc.)
 │   │
-│   │  ── Fixed Pipeline — fixed_pipeline branch (also present here) ──
-│   ├── chatbot_pipeline.py       ← Fixed sequential pipeline (used in fixed_pipeline branch)
+│   │  ── Opt-in Monitoring (standalone, separate from chatbot graph) ──
+│   ├── ui_events_db.py           ← SQLite for opt-in interaction events (NO value column)
+│   ├── struggle_detector.py      ← Rule-based struggle detection (≥2 blur_empty/submit_fail → tip)
 │   │
-│   │  ── Shared by both branches ──────────────────────────────────────
+│   │  ── Fixed Pipeline — fixed_pipeline branch ──────────────────────
+│   ├── chatbot_pipeline.py       ← Fixed sequential pipeline (fixed_pipeline branch only)
+│   │
+│   │  ── Shared ──────────────────────────────────────────────────────
 │   ├── intent_classifier.py      ← DistilBERT fine-tuned on Banking77
 │   ├── sentiment.py              ← Sentiment analysis + escalation logic
 │   ├── retriever.py              ← ChromaDB search interface (wraps knowledge_db.py)
@@ -855,8 +901,8 @@ Intelligent-Customer-Support-Chatbot/
 │   ├── database.py               ← SQLite chat history + feedback
 │   ├── document_processor.py     ← Loads and splits knowledge base files (LangChain)
 │   ├── embedder.py               ← Legacy FAISS builder (kept for reference)
-│   ├── prompt_templates.py       ← FEW_SHOT_EXAMPLES + CHAIN_OF_THOUGHT_TEMPLATE
-│   └── llm_generator.py          ← Calls Ollama to generate a response
+│   ├── prompt_templates.py       ← PERSONA_PROMPT + FEW_SHOT_EXAMPLES + CHAIN_OF_THOUGHT_TEMPLATE
+│   └── llm_generator.py          ← Calls Ollama Llama 3.2 3B to generate a response
 │
 ├── models/                       ← ML model artifacts
 │   ├── intent_classifier/        ← Fine-tuned DistilBERT (config, safetensors, tokenizer)
@@ -866,21 +912,45 @@ Intelligent-Customer-Support-Chatbot/
 ├── chroma_db/                    ← ChromaDB vector store (auto-created on first run)
 │   └── (binary files managed by ChromaDB)
 │
-├── accounts.db                   ← SQLite demo banking database (created by seed_accounts.py)
-├── chat_history.db               ← SQLite conversation + feedback store
+├── accounts.db                   ← SQLite: 15 demo banking accounts + transactions
+├── services.db                   ← SQLite: rate cards (FD/loan/pawning/FX) + customer product records
+├── chat_history.db               ← SQLite: conversation logs + feedback ratings
+├── ui_events.db                  ← SQLite: opt-in interaction events (auto-created, no value column)
 │
 ├── ui/
-│   └── app.py                    ← Flask web UI: login/signup page, chat page, /dashboard
-│                                    Uses run_agent() in agentic branch
+│   ├── app.py                    ← Flask: login, chat, dashboard, product pages,
+│   │                                /set-consent, /track-event endpoints
+│   ├── static/
+│   │   ├── css/main.css          ← Shared design system + consent banner + struggle tip styles
+│   │   └── js/tracker.js         ← Privacy-first monitoring JS (never reads .value)
+│   └── templates/
+│       ├── base.html             ← Base layout — nav (incl. Business Loan), extra_scripts block
+│       ├── chat.html             ← Chat page
+│       ├── login.html            ← Login / Signup page
+│       ├── dashboard.html        ← Analytics dashboard
+│       ├── pages/
+│       │   ├── loan_personal.html    ← Personal Loan product page (consent + enquiry form)
+│       │   ├── loan_housing.html     ← Housing Loan product page
+│       │   ├── loan_vehicle.html     ← Vehicle Loan product page
+│       │   ├── loan_education.html   ← Education Loan product page
+│       │   ├── loan_business.html    ← Business Loan product page
+│       │   ├── fd.html               ← Fixed Deposits product page
+│       │   ├── pawning.html          ← Gold Pawning product page
+│       │   ├── cards.html            ← Cards product page
+│       │   └── transfers.html        ← Transfers & FX product page
+│       └── partials/
+│           └── _consent_banner.html  ← Reusable consent banner (included in all 9 product pages)
 │
 ├── seed_accounts.py              ← Seeds accounts.db with 15 demo customers + 75 transactions
+├── seed_services.py              ← Seeds services.db with rate cards + customer product records
 │
 ├── evaluation/
 │   ├── run_eval.py               ← Evaluation script (BLEU, ROUGE-L)
 │   ├── test_queries.csv          ← Test question/answer pairs
 │   └── results.csv               ← Output after running evaluation
 │
-├── AGENTIC_WORKFLOW.md           ← Detailed technical docs for the agentic system
+├── AGENTIC_WORKFLOW.md           ← Detailed technical docs for the agentic system (20 sections)
+├── BOOTCAMP_COVERAGE.md          ← Maps Agentic AI Bootcamp curriculum to project implementations
 ├── PROJECT_EXPLANATION.md        ← This file — complete project guide
 ├── train_intent_classifier.py    ← DistilBERT fine-tuning script (plain PyTorch)
 └── build_index.py                ← Legacy index builder (now handled by knowledge_db.py)
@@ -1204,8 +1274,12 @@ The project satisfies all required technique categories:
 | **Prompt Engineering — Systematic design** | ✓ | `CHAIN_OF_THOUGHT_TEMPLATE` with explicit rules |
 | **Prompt Engineering — Chain-of-thought** | ✓ | Rules guide LLM reasoning (numbered steps, no hallucination, history awareness) |
 | **Prompt Engineering — In-context (few-shot)** | ✓ | `FEW_SHOT_EXAMPLES` — 4 worked examples per category shown at inference |
-| **Agentic AI — LangGraph** | ✓ | `StateGraph` with 8 nodes, conditional routing, `@tool` functions (`agent_graph.py`) |
-| **Agentic AI — Tool use** | ✓ | `@tool` decorated functions in `agent_tools.py` called by graph nodes |
+| **Agentic AI — LangGraph** | ✓ | `StateGraph` with 9 nodes, conditional routing, `@tool` functions (`agent_graph.py`) |
+| **Agentic AI — Tool use** | ✓ | 15 `@tool` decorated functions in `agent_tools.py`: ML tools + account tools + 9 banking service tools |
+| **Agentic AI — Multi-turn planning** | ✓ | `banking_services_node` slot filling: missing values saved in `pending_calculation` (Flask session) → resumed next turn |
+| **Agentic AI — Deterministic tool output** | ✓ | All financial figures (EMI, FD maturity, FX rates) computed in Python — `generate_node` bypassed entirely |
+| **Rule-based UX detection** | ✓ | `struggle_detector.py` — pure Python `Counter` over interaction events; no ML involved |
+| **Privacy-by-design** | ✓ | `tracker.js` uses `:placeholder-shown` only; `/track-event` stores nothing without per-page consent |
 | Generative AI (VAE/GAN/Diffusion) | ✗ | Not applicable to a text chatbot |
 
 ---
@@ -1293,22 +1367,26 @@ This project is an AI customer support chatbot for the banking domain that combi
 | Few-shot examples in prompt | ✓ Done — 4 examples per category |
 | Conversation history in prompt | ✓ Done — last 4 turns |
 | Greeting detection | ✓ Done — embedding similarity |
-| **LangGraph agentic pipeline** | ✓ Done — `agent_graph.py` with 8 nodes and conditional routing |
-| **@tool decorated agent tools** | ✓ Done — `agent_tools.py` with 6 tool functions |
+| **LangGraph agentic pipeline** | ✓ Done — `agent_graph.py` with 9 nodes and conditional routing |
+| **@tool decorated agent tools** | ✓ Done — `agent_tools.py` with 15 tool functions |
 | **Account banking feature** | ✓ Done — SQLite demo banking, bcrypt PIN, Flask session auth |
 | **Login / Signup UI** | ✓ Done — Banking-style login page, shown before chat |
+| **Banking services (9 products)** | ✓ Done — FD/loan/pawning/cards/transfers calculators + my-records + 9 product pages |
+| **Multi-turn slot filling** | ✓ Done — `pending_calculation` in Flask session, up to 3 attempts |
+| **Opt-in customer monitoring** | ✓ Done — `tracker.js` + `struggle_detector.py` + per-page consent with privacy guarantees |
+| **Upgraded Llama model** | ✓ Done — Upgraded from `llama3.2:1b` to `llama3.2:3b` |
 
 ### Remaining / Optional
 
 | Enhancement | What It Would Do | Effort |
 |---|---|---|
 | **Response streaming** | Show LLM output token-by-token instead of waiting | Low |
-| **Larger Llama model** | `llama3.2:3b` or `llama3:8b` for better quality | Very low |
 | **Re-ranking** | Cross-encoder to re-score ChromaDB results for precision | Low |
 | **Hybrid search (BM25 + ChromaDB)** | Keyword + semantic search combined | Medium |
 | **Human handoff integration** | Route escalated chats to Zendesk/ticket system | High |
 | **Active learning** | Use low-confidence predictions to improve intent model | High |
 | **MCP server** | Expose knowledge base as MCP tool for Claude Desktop | Medium |
+| **Monitoring analytics dashboard** | Visualise most-struggled fields per page from `ui_events.db` | Medium |
 
 ---
 
@@ -1604,6 +1682,348 @@ This is the key advantage of the agentic graph: **account queries cost zero LLM 
 ### When to use which
 - **Fixed pipeline**: Simpler to understand, fewer dependencies, easier to debug step-by-step, better for learning the fundamentals.
 - **Agentic (LangGraph)**: Cleaner routing logic, more maintainable as complexity grows, nodes are independently testable, industry-standard pattern for production AI systems.
+
+---
+
+---
+
+## 24. How the Chatbot Response Evolved — Stage by Stage
+
+This section traces every meaningful change to how the chatbot generates a response, from the very first commit to the current production branch. It explains what the chatbot did at each stage, what the problem was, and exactly what was added to fix it.
+
+---
+
+### Stage 1 — The Very Beginning (Initial Commit `e691bbf`)
+
+**Architecture:** A single Python function. Every message goes through the same fixed steps every time.
+
+```
+Customer types a message
+        ↓
+  Classify Intent (DistilBERT fine-tuned on Banking77)
+        ↓
+  Analyse Sentiment (DistilBERT SST-2)
+        ↓
+  Search Knowledge Base (FAISS binary index)
+        ↓
+  Build prompt → Generate Response (LLM via Ollama)
+        ↓
+  Return response
+```
+
+**UI:** Gradio widget — a basic ML demo interface running on `localhost:7860`.
+
+**Problems at this stage:**
+
+| Problem | What happened | Impact |
+|---|---|---|
+| Greeting → LLM | "Hello" triggered intent classifier, FAISS search, and LLM generation | Slow, and the LLM gave a banking-info reply to a simple greeting |
+| Greeting misclassified | Banking77 has no greeting class — "Hello" was assigned a random banking intent (e.g. `check_balance`) | Retrieved phishing fraud documents as the "nearest" FAQ |
+| No conversation history | The LLM didn't know what was said in earlier turns | "What if it still doesn't work?" produced a generic reply with no context |
+| No persistence | Every conversation was lost on page refresh | No analytics, no improvement possible |
+| FAISS threshold too low | Similarity threshold was 0.1 — almost any document matched anything | Irrelevant documents injected into every prompt |
+| UI was Gradio | No custom feedback buttons, no login, no session tracking | Not suitable for a real banking UI |
+
+---
+
+### Stage 2 — Fixed Pipeline RAG Upgrade (commit `667a40e`)
+
+**Architecture:** Same straight-line function, but much smarter at each step. The key file changed: `src/chatbot_pipeline.py`.
+
+```
+Customer types a message
+        ↓
+  ── NEW ──  Embedding similarity check against greeting/closing prototypes
+  "Hello" → score 0.99 > 0.75 threshold → return canned welcome immediately
+  "My card is blocked" → score 0.18 < 0.75 → continue
+        ↓
+  Classify Intent (DistilBERT) → get confidence score
+        ↓
+  ── NEW ──  If confidence < 0.20 AND no conversation history → ask to rephrase
+        ↓
+  ── NEW ──  Map intent → ChromaDB category (fraud / billing / technical / account)
+        ↓
+  ── NEW ──  Build enriched search query: last_user_message + current_message
+  ("I cannot log in" + "What is the email?" → finds login docs, not phishing docs)
+        ↓
+  Search ChromaDB (replaces FAISS) with category filter + 0.45 threshold
+  If category search returns nothing → fallback: search all 51 documents
+        ↓
+  Escalate? (keyword rules first, then SST-2 score)
+  YES → return fixed handoff message
+        ↓
+  Build structured prompt:
+    [4 Few-shot examples] + [last 4 history turns] + [retrieved docs] + [query] + [rules]
+        ↓
+  Generate Response (Llama via Ollama)
+        ↓
+  Clean response (strip leaked "Step 4 —", "Answer:", reasoning text)
+        ↓
+  Save to SQLite chat_history.db
+        ↓
+  Return response
+```
+
+**What improved at this stage:**
+
+| Before | After |
+|---|---|
+| "Hello" → phishing advice (1–5 seconds) | "Hello" → instant welcome (< 50 ms, no LLM called) |
+| FAISS binary index, threshold 0.1 | ChromaDB HNSW, threshold 0.45, category-filtered |
+| No history in prompt | Last 4 turns injected every time |
+| No examples in prompt | 4 worked examples showing numbered steps and menu paths |
+| LLM output included reasoning leakage | `_clean_response()` strips leaked thinking |
+| No persistence | `chat_history.db` saves every turn + feedback |
+| Gradio UI | Flask + custom HTML/CSS/JS, 👍/👎 feedback buttons, `/dashboard` analytics |
+
+**Key concept introduced — ChromaDB category filtering:**
+When the intent classifier says "card_not_working" with ≥ 50% confidence, the system knows it's a `technical` query. Instead of searching all 51 documents, it searches only the 10 technical documents. This prevents billing FAQs from appearing in a card-troubleshooting answer.
+
+**Key concept introduced — Context-enhanced retrieval:**
+A follow-up like "What is the email?" is too short to search meaningfully. By prepending the previous message ("I cannot log in What is the email?"), ChromaDB finds the login/support contact document instead of phishing documents that happen to mention "email".
+
+---
+
+### Stage 3 — Agentic Flow with LangGraph (commit `771f691`)
+
+**Architecture:** The single function is replaced by a **directed graph**. Each concern becomes its own independent node. The response path depends on what kind of message was sent.
+
+```
+Customer types a message
+        ↓
+  [chitchat_node]
+  Greeting/closing detected? ──YES──► set response → END  (no other nodes run)
+        ↓ NO
+  [intent_node]
+  DistilBERT classifies intent + confidence
+        ↓
+  Confidence < 0.20 AND first message? ──YES──► [clarify_node] → END
+        ↓ NO
+  [sentiment_node]
+  Keyword rules + DistilBERT SST-2
+        ↓
+  Escalation triggered? ──YES──► [escalate_node] → END
+        ↓ NO
+  [retrieve_node]
+  Category-filtered ChromaDB search with context-enhanced query
+        ↓
+  [generate_node]
+  Build structured prompt → Llama 3.2 → response
+        ↓
+  END
+```
+
+**What the LangGraph model adds over the fixed pipeline:**
+
+| Fixed pipeline (`chatbot_pipeline.py`) | Agentic graph (`agent_graph.py`) |
+|---|---|
+| `if/else` blocks inside one big function | Named nodes connected by conditional edges |
+| Every step runs (slightly wasteful even with early returns) | Routing is explicit — node is only entered if needed |
+| Hard to test one step in isolation | Each node is a standalone Python function |
+| Adding a new behaviour requires editing the function | Add a new node and connect it with edges |
+| State is local variables that disappear | `AgentState` TypedDict carries state across all nodes |
+| Tools are plain function calls | `@tool` decorated functions with typed schemas |
+
+**What `AgentState` is:**
+A shared dictionary that flows through every node in the graph. Each node reads what it needs and writes back what it produced. Nothing is lost between nodes.
+
+```python
+class AgentState(TypedDict):
+    user_message:        str
+    history:             List[Tuple[str, str]]
+    session_id:          str
+    session_customer_id: Optional[str]   # from Flask session — never from user input
+    intent:              Optional[str]
+    confidence:          Optional[float]
+    sentiment:           Optional[str]
+    escalated:           Optional[bool]
+    category:            Optional[str]
+    retrieved_docs:      Optional[List[str]]
+    response:            Optional[str]   # whichever node sets this first wins
+```
+
+**Flask replaces Gradio fully at this stage** — the app now serves a real banking-style web UI on `localhost:5000` with a chat page, analytics dashboard, and session management.
+
+---
+
+### Stage 4 — Real Account Data (commits `8790c51`, `b1324c2`)
+
+**What changed:** A new `account_node` was inserted between `chitchat_node` and `intent_node`. It intercepts personal account queries and answers them directly from a secure SQLite database — without involving the intent classifier, the LLM, or any part of the RAG pipeline.
+
+```
+Customer types a message
+        ↓
+  [chitchat_node]  greeting? ──YES──► END
+        ↓ NO
+  [account_node]
+  Does message match account patterns?
+  ("my balance", "recent transactions", "how much do I have"...)
+        ↓ YES (and customer is logged in)
+        ├──► call tool_get_account_balance(customer_id from Flask session)
+        │    → accounts_db.get_account_info("DEMO001")
+        │    → "Your balance: LKR 245,800.00  Account: **** 2345"
+        └──► set response → END  (LLM never called)
+        ↓ NO (not an account query, or not logged in)
+  [intent_node] → [sentiment_node] → [retrieve_node] → [generate_node] → END
+```
+
+**What was added:**
+
+| New addition | Purpose |
+|---|---|
+| `accounts.db` SQLite database | 15 demo customers, 5 transactions each, bcrypt-hashed PINs |
+| `src/accounts_db.py` | `verify_pin()`, `get_account_info()`, `get_transactions()` |
+| `seed_accounts.py` | One-time script to populate the database |
+| Login / Signup page | Forces authentication before the chat is accessible |
+| Navy account header bar | Shows customer name, masked account number, balance, logout button |
+| `session_customer_id` in Flask session | Server-side identity that the LLM can never read or change |
+
+**The critical security design introduced here:**
+The `customer_id` is stored in `flask.session` on the server. When a message arrives, `run_agent()` reads it from the session and passes it into `AgentState`. The `account_node` reads it from state and passes it to the database function. **The LLM never sees this value at any point.** A customer cannot type "show balance for DEMO002" and get another person's data.
+
+```
+Correct flow:
+  flask.session["authenticated_customer_id"] = "DEMO001"  (set at login)
+       ↓
+  run_agent(..., session_customer_id="DEMO001")            (passed by /chat)
+       ↓
+  AgentState["session_customer_id"] = "DEMO001"           (in graph)
+       ↓
+  account_node → tool_get_account_balance(customer_id="DEMO001")
+       ↓
+  accounts_db.get_account_info("DEMO001")                 (SQL query)
+
+Wrong flow (blocked):
+  Customer types: "show balance for DEMO002"
+  → LLM is never consulted for customer_id
+  → account_node reads state["session_customer_id"] = "DEMO001" only
+  → DEMO002's data is never accessible
+```
+
+---
+
+### Stage 5 — Banking Services + Monitoring (commits `e192bd2`, current `real_data_agentic` branch)
+
+**What changed:** Two independent subsystems were added on top of the existing graph.
+
+#### 5a — `banking_services_node` (9th graph node)
+
+A new node was inserted between `account_node` and `intent_node`. It handles all banking product queries — financial calculators and customer product records — entirely in Python, without the LLM.
+
+```
+Customer types a message
+        ↓
+  [chitchat_node]  greeting? ──YES──► END
+        ↓ NO
+  [account_node]   balance/transactions? ──YES──► END
+        ↓ NO
+  [banking_services_node]
+  Does message match any of:
+    FD/deposit query?       → tool_calculate_fd_interest()   → Python maths → END
+    Loan EMI query?         → tool_calculate_loan_emi()      → Python maths → END
+    Pawning advance query?  → tool_calculate_pawning_advance()→ Python maths → END
+    Transfer fee query?     → tool_calculate_transfer_fee()  → Python maths → END
+    FX rate query?          → tool_get_fx_rate()             → DB lookup    → END
+    "My FDs / loans / cards / pawning" (if logged in)        → DB lookup    → END
+    Dispute keyword detected while showing records?           → escalate_node→ END
+    Slots missing for a calculator? → ask for missing value  → END
+                                       (saves pending_calculation to Flask session)
+                                       next message → resumes from where it left off
+        ↓ NO match at all
+  [intent_node] → [sentiment_node] → [retrieve_node] → [generate_node] → END
+```
+
+**The most important rule added at this stage:**
+
+> **The LLM never generates a financial number.**
+
+EMI, FD maturity, transfer fee, exchange rate, pawning advance — every figure is computed by a deterministic Python formula. The LLM only reaches `generate_node` for general FAQ questions where no number is involved. This gives a 100% accuracy guarantee on all financial figures shown to customers.
+
+```python
+# Loan EMI — computed in Python, not by the LLM
+r = annual_rate / 12 / 100
+EMI = principal * r * (1 + r)**n / ((1 + r)**n - 1)
+# Result injected into AgentState["response"] before generate_node is reached
+# generate_node never runs for this message
+```
+
+**Multi-turn slot filling introduced:**
+When a customer asks for an EMI but doesn't give the amount, the node asks for it. The incomplete state is saved to `flask.session["pending_calculation"]`. Next HTTP request, the node picks up where it left off. After 3 failed attempts it gracefully gives up.
+
+**9 public product pages added:**
+Five loan types, fixed deposits, pawning, cards, and transfers — each a standalone Flask route serving a rate-card page with an enquiry form. The chatbot's `banking_services_node` can direct customers to these pages by URL.
+
+**Llama model upgraded from 1B → 3B:**
+A systematic 15-test comparison (Section 19 of `AGENTIC_WORKFLOW.md`) showed the 1B model could not attend to the full structured prompt (persona + 5 examples + history + context + rules). The 3B model passed 12/15 tests vs 3/15 for the 1B model. The upgrade was made permanent.
+
+#### 5b — Opt-in Customer Monitoring (independent subsystem)
+
+A completely separate system that has no connection to the chatbot graph. It runs only on the 9 product pages.
+
+```
+Customer visits e.g. /loans/personal
+        ↓
+  Consent banner appears (first visit or after logout)
+  "Allow AutoTrust Bank to track how you use this page?"
+        ↓
+  Customer clicks "Yes, that's fine" OR "No thanks"
+        ↓ (stored in flask.session['tracking_consent']['loans_personal'])
+
+If consented:
+  tracker.js loads and attaches listeners to the enquiry form
+        ↓
+  Customer leaves loan_amount field empty twice (two blur events)
+        ↓
+  tracker.js fires POST /track-event  {event_type: "blur_empty", field_name: "loan_amount"}
+  (field VALUE is NEVER sent — tracker.js uses :placeholder-shown CSS only)
+        ↓
+  /track-event checks: session['tracking_consent']['loans_personal'] == True?
+  YES → save_event() → ui_events.db
+       detect_struggle() → Counter over last 20 events for this session+page
+       blur_empty["loan_amount"] >= 2 → return tip from _TIPS lookup table
+        ↓
+  Browser receives tip JSON → slide-in overlay appears bottom-right
+  "Enter the loan amount in LKR (e.g. 500000). Commas are not needed."
+  Auto-dismisses after 7 seconds.
+
+If NOT consented:
+  tracker.js never loads
+  POST /track-event returns HTTP 204 immediately, nothing stored
+```
+
+**Privacy invariant (enforced in code, not just policy):**
+
+| What is collected | What is never collected |
+|---|---|
+| Field name (e.g. `loan_amount`) | Field value (what the customer typed) |
+| Event type (`blur_empty`, `submit_fail`) | Any personal information |
+| Page key (`loans_personal`) | Whether the form was filled correctly |
+| Server-generated session ID | Browser fingerprint or IP address |
+
+---
+
+### Full Before vs After — All 5 Stages
+
+| What | Stage 1 (Initial) | Stage 5 (Now) |
+|---|---|---|
+| **Architecture** | Single function, linear | 9-node LangGraph state machine |
+| **UI framework** | Gradio widget | Full Flask banking website with login |
+| **Greeting handling** | LLM generates reply (slow, wrong) | Embedding similarity → instant canned reply (< 50 ms, no LLM) |
+| **Vector store** | FAISS binary index, threshold 0.1 | ChromaDB HNSW, threshold 0.45, category-filtered |
+| **History** | None — LLM has no context | Last 4 turns injected into every LLM prompt |
+| **Account queries** | Not possible | `account_node` → `accounts.db` SQLite, no LLM |
+| **Financial calculations** | LLM produces the number (hallucination risk) | Python deterministic formulas — LLM bypassed entirely |
+| **Product information** | None | 9 product pages with live rate cards |
+| **Multi-turn filling** | None | Slot filling via Flask session — resumes across HTTP requests |
+| **Dispute handling** | LLM tries to resolve | `escalate_node` — flagged for human agent |
+| **UX monitoring** | None | Opt-in per-page tracker → struggle detection → context tips |
+| **LLM model** | Llama 3.2 1B | Llama 3.2 3B (upgraded after systematic 15-test comparison) |
+| **LLM involvement** | Every single message | Only when no cheaper path applies (greeting/account/calculator all bypass it) |
+| **Persistence** | None | 5 SQLite databases: accounts, services, chat history, knowledge, UI events |
+
+**The core shift across all 5 stages:**
+
+> From "always ask the LLM for everything" → to "only ask the LLM as a last resort, and never for a financial figure."
 
 ---
 

@@ -21,6 +21,7 @@
 17. [Demo Credentials](#17-demo-credentials)
 18. [Challenges, Debugging & Fixes](#18-challenges-debugging--fixes)
 19. [LLM Model Comparison — llama3.2:1b vs llama3.2:3b](#19-llm-model-comparison--llama321b-vs-llama323b)
+20. [Opt-in Customer Monitoring Feature](#20-opt-in-customer-monitoring-feature)
 
 ---
 
@@ -59,7 +60,7 @@ Unlike a fixed pipeline where every message goes through every step in order, th
 |---|---|
 | Agent orchestration | LangGraph 1.2.6 (StateGraph) |
 | Tool framework | LangChain Core 1.4.8 (`@tool` decorator) |
-| Web framework | Flask |
+| Web framework | Flask + Jinja2 templates |
 | Intent classifier | DistilBERT fine-tuned on Banking77 |
 | Sentiment analyser | DistilBERT SST-2 (HuggingFace) |
 | Embedding model | `all-MiniLM-L6-v2` (SentenceTransformers) |
@@ -68,8 +69,10 @@ Unlike a fixed pipeline where every message goes through every step in order, th
 | Account database | SQLite (`accounts.db`) |
 | Banking services database | SQLite (`services.db`) |
 | Chat history database | SQLite (`chat_history.db`) |
+| UI events database | SQLite (`ui_events.db`) — opt-in monitoring, no value column |
 | PIN hashing | bcrypt |
 | Session management | Flask server-side session (signed cookie) |
+| Client-side monitoring | Vanilla JS (`tracker.js`) — privacy-first, `:placeholder-shown` only |
 | Python version | 3.13.2 (venv) |
 
 ---
@@ -80,7 +83,28 @@ Unlike a fixed pipeline where every message goes through every step in order, th
 Intelligent-Customer-Support-Chatbot/
 │
 ├── ui/
-│   └── app.py                  # Flask app — routes, login UI, chat UI, dashboard
+│   ├── app.py                         # Flask app — all routes, login UI, chat UI, dashboard,
+│   │                                  # /set-consent, /track-event, product page routes
+│   ├── static/
+│   │   ├── css/main.css               # Shared design system + consent banner + struggle tip styles
+│   │   └── js/tracker.js              # Privacy-first opt-in monitoring JS (never reads .value)
+│   └── templates/
+│       ├── base.html                  # Base layout — nav (incl. Business Loan), {% block extra_scripts %}
+│       ├── chat.html                  # Chat page (standalone — not using base.html)
+│       ├── login.html                 # Login / Signup page
+│       ├── dashboard.html             # Analytics dashboard
+│       ├── pages/
+│       │   ├── loan_personal.html     # Personal Loan product page
+│       │   ├── loan_housing.html      # Housing Loan product page
+│       │   ├── loan_vehicle.html      # Vehicle Loan product page
+│       │   ├── loan_education.html    # Education Loan product page
+│       │   ├── loan_business.html     # Business Loan product page
+│       │   ├── fd.html                # Fixed Deposits product page
+│       │   ├── pawning.html           # Gold Pawning product page
+│       │   ├── cards.html             # Cards product page
+│       │   └── transfers.html         # Transfers & FX product page
+│       └── partials/
+│           └── _consent_banner.html   # Reusable consent banner (included in all 9 product pages)
 │
 ├── src/
 │   ├── agent_state.py          # AgentState TypedDict — shared data bag for the graph
@@ -89,7 +113,10 @@ Intelligent-Customer-Support-Chatbot/
 │   ├── prompt_templates.py     # PERSONA_PROMPT + few-shot + chain-of-thought template
 │   ├── accounts_db.py          # SQLite operations for banking demo (auth, balance, txns)
 │   ├── services_db.py          # SQLite operations for rate cards + customer product records
+│   ├── site_routes.py          # SITE_ROUTES dict — deterministic product page URL lookup
 │   ├── slot_extraction.py      # Regex-based slot extractors (amount, tenure, carat, etc.)
+│   ├── ui_events_db.py         # SQLite for opt-in monitoring events (NO value column)
+│   ├── struggle_detector.py    # Rule-based struggle detection + tip lookup table
 │   ├── intent_classifier.py    # DistilBERT Banking77 inference
 │   ├── sentiment.py            # DistilBERT SST-2 + keyword escalation rules
 │   ├── retriever.py            # ChromaDB retrieval using sentence embeddings
@@ -109,7 +136,8 @@ Intelligent-Customer-Support-Chatbot/
 │
 ├── accounts.db                 # SQLite — demo accounts & transactions (simulated)
 ├── services.db                 # SQLite — rate cards, FDs, loans, pawning, cards (simulated)
-└── chat_history.db             # SQLite — conversation logs & feedback
+├── chat_history.db             # SQLite — conversation logs & feedback
+└── ui_events.db                # SQLite — opt-in product page interaction events (auto-created)
 ```
 
 ---
@@ -135,6 +163,11 @@ class AgentState(TypedDict):
     # Kept completely separate from session_customer_id.
     customer_display_name: Optional[str]         # from Flask session — cosmetic only
 
+    # The Flask request.host_url (e.g. "http://127.0.0.1:5000/") passed in by
+    # the /chat route so banking_services_node can build deterministic product
+    # page URLs via get_site_url(). Never generated or modified by any LLM node.
+    host_url:             Optional[str]
+
     # ── Set by individual nodes as the graph executes ──────────────────
     intent:               Optional[str]          # e.g. "card_not_working" | "fd_calculator"
     confidence:           Optional[float]        # intent classifier confidence 0–1
@@ -149,6 +182,7 @@ class AgentState(TypedDict):
 - `session_customer_id` — the authenticated security identity. Never derived from chat text.
 - `customer_display_name` — a cosmetic nickname collected conversationally. No security relevance whatsoever. These two fields must never be conflated.
 - `pending_calculation` — persisted across HTTP requests via `flask.session` so multi-turn slot filling works across page-reload-safe turns.
+- `host_url` — injected by `/chat` from `request.host_url` so `banking_services_node` can build fully-qualified product page URLs deterministically. The LLM never writes or reads this field.
 
 ### Why TypedDict?
 LangGraph requires the state to be a typed dictionary so it can safely merge partial updates from each node. Nodes only write the fields they are responsible for — all other fields pass through unchanged.
@@ -811,6 +845,27 @@ CREATE TABLE cards (
 );
 ```
 
+### `ui_events.db`
+
+Auto-created at first product-page visit. Holds opt-in interaction events only — **no field value is ever stored**.
+
+```sql
+CREATE TABLE IF NOT EXISTS interaction_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   TEXT    NOT NULL,   -- per-browser UUID from flask.session['ui_session_id']
+    page         TEXT    NOT NULL,   -- page_key e.g. 'loans_personal', 'fd'
+    event_type   TEXT    NOT NULL,   -- 'page_view' | 'blur_empty' | 'submit_fail' | 'submit_success'
+    field_name   TEXT,               -- HTML name attribute of the field (never its value)
+    ts           TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+    -- NO value column — by design. Field values are NEVER captured anywhere in this system.
+);
+```
+
+**Privacy invariants enforced in code:**
+- `field_name` is taken from `event.target.name` (the HTML `name` attribute) — never from `event.target.value`
+- Server-side: `/track-event` only accepts events when `session['tracking_consent'][page_key]` is `True`
+- Consent is per-page, per-login-session. Cleared on logout.
+
 ---
 
 ## 14. Flask API Endpoints
@@ -820,15 +875,28 @@ CREATE TABLE cards (
 | GET | `/` | Yes | Chat page (redirects to `/login` if not authenticated) |
 | GET | `/login` | No | Login / Signup page |
 | POST | `/login` | No | Verify PIN, set session. Body: `{customer_id, pin}` |
-| POST | `/logout` | No | Clears `authenticated_customer_id`, `pending_calculation`, `customer_display_name` from session |
+| POST | `/logout` | No | Clears `authenticated_customer_id`, `pending_calculation`, `customer_display_name`, `tracking_consent`, `ui_session_id` from session |
 | POST | `/signup` | No | Create demo account + auto-login. Body: `{name, customer_id, pin}` |
 | GET | `/me` | Yes | Returns `{authenticated, name, masked_account_no, account_type, balance (LKR)}` |
 | POST | `/chat` | Yes* | Body: `{message, history, session_id}`. Returns `{response, intent, sentiment, category, escalated, turn_id}` |
 | POST | `/feedback` | No | Body: `{turn_id, rating}` |
 | GET | `/stats` | No | JSON analytics summary |
 | GET | `/dashboard` | No | HTML analytics dashboard |
+| GET | `/loans/personal` | No | Personal Loan product page |
+| GET | `/loans/housing` | No | Housing Loan product page |
+| GET | `/loans/vehicle` | No | Vehicle Loan product page |
+| GET | `/loans/education` | No | Education Loan product page |
+| GET | `/loans/business` | No | Business Loan product page |
+| GET | `/deposits/fixed-deposits` | No | Fixed Deposits product page |
+| GET | `/services/pawning` | No | Gold Pawning product page |
+| GET | `/cards` | No | Cards product page |
+| GET | `/transfers` | No | Transfers & FX product page |
+| POST | `/set-consent` | No | Sets per-page tracking consent. Form body: `{page_key, choice ('yes'/'no'), next}`. Redirects back to `next`. |
+| POST | `/track-event` | No† | Records a single interaction event. JSON body: `{page, event_type, field_name}`. Returns `{ok, tip}`. |
 
 *`/chat` works without auth but returns "please verify identity" for account queries.
+
+†`/track-event` silently returns HTTP 204 (no-content) if consent for the page is not `True`. Events are never stored for unconsented pages.
 
 ### `/chat` session flow
 ```python
@@ -1232,6 +1300,47 @@ for mod in ['torch', 'transformers', 'sentence_transformers', 'datasets']:
 
 ---
 
+### Challenge 11 — Consent banner persisting across user logins
+
+**Symptom:** After clicking "No thanks" on the consent banner and then logging out and back in as a different user, the banner never reappeared. The new user's session inherited the previous user's "No" consent decision.
+
+**Root cause:** The logout route cleared `authenticated_customer_id`, `pending_calculation`, and `customer_display_name` from the Flask session, but not `tracking_consent` or `ui_session_id`. Flask sessions are signed cookies scoped to the browser tab — a new login in the same browser tab still had the old consent dict.
+
+**Fix — added two pops to the logout route in `ui/app.py`:**
+```python
+session.pop('tracking_consent', None)  # reset per-page consent on logout
+session.pop('ui_session_id', None)     # reset tracking session ID on logout
+```
+Each new login now starts with an empty consent dict, so the banner correctly reappears for all 9 product pages.
+
+---
+
+### Challenge 12 — Analytics Dashboard button rendered twice in nav
+
+**Symptom:** The "Analytics Dashboard" nav link appeared twice in the navigation bar — once from `base.html` and once injected by a separate template include.
+
+**Root cause:** During the `base.html` update to add the Business Loan nav link and `{% block extra_scripts %}`, the Analytics Dashboard nav link was accidentally duplicated.
+
+**Fix:** Removed the duplicate nav entry from `base.html`, keeping only the canonical one.
+
+---
+
+### Challenge 13 — LLM repeating a question already asked in the same session
+
+**Symptom:** During a multi-turn conversation, the bot would occasionally ask "What is your loan amount?" even though the customer had already provided it two turns earlier.
+
+**Root cause:** The `CHAIN_OF_THOUGHT_TEMPLATE` passed the conversation history but did not include an explicit instruction to avoid re-asking answered questions. The 3B model would occasionally "forget" slot values already given and revert to an earlier question.
+
+**Fix — added history-awareness rule to `CHAIN_OF_THOUGHT_TEMPLATE` in `src/prompt_templates.py`:**
+```
+Rules:
+- NEVER ask a question you have already asked in the conversation history above.
+- If the customer has already provided a value (loan amount, tenure, etc.) in a prior turn,
+  treat it as known — do not ask for it again.
+```
+
+---
+
 ## 19. LLM Model Comparison — llama3.2:1b vs llama3.2:3b
 
 The same 15-test suite was run against both models using the identical prompt (PERSONA_PROMPT + few-shot + context + rules). Tests covered: happy customer, frustrated customer, bad news delivery, number accuracy, unwelcome fact plainness, contact details, how-to instructions, multi-turn name usage, and session closing.
@@ -1275,3 +1384,148 @@ ollama pull llama3.2:3b
 # Verify
 venv\Scripts\python -c "import ollama; print([m['model'] for m in ollama.list()['models']])"
 ```
+
+---
+
+## 20. Opt-in Customer Monitoring Feature
+
+> This feature is entirely separate from the chatbot agent graph. It does not involve any LLM node, `AgentState`, or chat-related code. Its purpose is to detect patterns of customer struggle on the 9 banking product pages (loan, FD, pawning, cards, transfers) and return context-sensitive tips.
+
+### 20.1 Privacy Design (Non-Negotiable)
+
+| Constraint | Enforcement point |
+|---|---|
+| Field VALUES are never read, captured, logged, or transmitted | `tracker.js` uses `el.matches(':placeholder-shown')` only — `.value` is never accessed |
+| `field_name` is the HTML `name` attribute, never the user's typed input | `event.target.name` only — `event.target.value` is never accessed |
+| Tracking only occurs for pages where the user explicitly consented | `/track-event` returns HTTP 204 silently if `session['tracking_consent'][page_key]` is not `True` |
+| Consent is per-page, per-login-session | `session['tracking_consent']` is a `dict` keyed by `page_key` — cleared on logout |
+| `ui_events.db` has NO value column | Column is absent from the schema — cannot be added without a migration |
+| No ML or LLM anywhere in struggle detection | `src/struggle_detector.py` is pure rule-based Python — `Counter` over event types |
+
+---
+
+### 20.2 System Architecture
+
+```
+Browser (product page)
+    │
+    │  page load
+    ▼
+TRACKER_CONFIG = {page, consented, sessionId}   ← set inline in each template
+    │
+    ▼
+tracker.js (IIFE)
+    │  hard gate: if (!consented) return;
+    │
+    ├── send('page_view', null)                  ← on load
+    ├── blur listener  → isFieldEmpty(el)?       ← uses :placeholder-shown only
+    │       YES → send('blur_empty', field.name)
+    ├── focusin listener → send dismissTip()
+    └── submit listener → validate required fields
+            any empty → send('submit_fail', field.name)
+            all filled → send('submit_success', null)
+
+POST /track-event  {page, event_type, field_name}
+    │
+    ├── gate: _consent_for(page_key) → False/None → return 204 (nothing stored)
+    ├── allowlist: event_type not in valid set → return 400
+    ├── save_event(ui_session_id, page, event_type, field_name) → ui_events.db
+    ├── if event_type in ('blur_empty', 'submit_fail'):
+    │       detect_struggle(ui_session_id, page) → tip dict | None
+    └── return {ok: True, tip: {...} | null}
+
+tracker.js receives response
+    └── if data.tip → showTip(tip.message)
+            auto-dismiss after 7s or next focusin
+```
+
+---
+
+### 20.3 New Files
+
+| File | Purpose |
+|---|---|
+| `src/ui_events_db.py` | SQLite init + `save_event()` + `get_recent_events()` for `ui_events.db` |
+| `src/struggle_detector.py` | Rule-based `detect_struggle()` — reads recent events, returns tip or None |
+| `ui/static/js/tracker.js` | Privacy-first JS: field blur/submit tracking using `:placeholder-shown` |
+| `ui/templates/partials/_consent_banner.html` | Reusable consent banner included in all 9 product pages |
+| `ui/templates/pages/` (9 files) | Product pages: each has consent banner, enquiry form, tracker init block |
+
+---
+
+### 20.4 Struggle Detection Logic (`src/struggle_detector.py`)
+
+```python
+def detect_struggle(session_id: str, page: str) -> Optional[dict]:
+    events = get_recent_events(session_id, page, limit=20)
+    counts = Counter(
+        (e['field_name'], e['event_type'])
+        for e in events
+        if e['field_name'] and e['event_type'] in ('blur_empty', 'submit_fail')
+    )
+    for (field, _), count in counts.most_common():
+        if count >= 2:
+            tip_msg = _TIPS.get((page, field))
+            if tip_msg:
+                return {"field": field, "message": tip_msg}
+    return None
+```
+
+**Trigger condition:** ≥ 2 `blur_empty` or `submit_fail` events for the same field on the same page in the same session.
+
+**`_TIPS` dictionary:** 35 entries covering all 9 pages × key fields. Examples:
+- `('loans_personal', 'loan_amount')` → "Loan amounts typically range from LKR 50,000 to LKR 5,000,000. Enter numbers only (e.g. 500000)."
+- `('fd', 'tenure_months')` → "We offer FD terms of 3, 6, 12, 24, 36, and 60 months."
+- `('pawning', 'carat')` → "Select the gold purity: 18ct, 22ct, or 24ct. We accept all three grades."
+
+---
+
+### 20.5 Consent Flow
+
+```
+1. Customer visits /loans/personal (or any product page)
+2. Server calls _page_tracking_ctx('loans_personal'):
+   - consent_status = session.get('tracking_consent', {}).get('loans_personal')
+     → None (first visit) | True (consented) | False (declined)
+   - ui_session_id = session['ui_session_id']  ← UUID, created on first product page visit
+3. Template renders:
+   - if consent_status is None  → show consent banner
+   - if consent_status is True  → show enquiry form + load tracker.js
+   - if consent_status is False → show neither (page content only)
+4. Customer clicks "Yes, that's fine" or "No thanks"
+   → POST /set-consent  {page_key, choice, next}
+   → session['tracking_consent']['loans_personal'] = True | False
+   → redirect back to the same page
+5. On logout: session.pop('tracking_consent') + session.pop('ui_session_id')
+   → next login starts fresh (consent banner reappears for all pages)
+```
+
+---
+
+### 20.6 Tip Display (tracker.js)
+
+```javascript
+function showTip(tip) {
+    let el = document.getElementById('struggle-tip');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'struggle-tip';
+        el.className = 'struggle-tip';
+        document.body.appendChild(el);
+    }
+    el.textContent = tip.message;
+    el.classList.add('visible');
+    clearTimeout(_tipTimer);
+    _tipTimer = setTimeout(dismissTip, 7000);
+}
+```
+
+Tips slide in from the bottom-right (CSS `@keyframes tipSlide`), auto-dismiss after 7 seconds, and also dismiss on the customer's next field focus — ensuring they never block the form.
+
+---
+
+### 20.7 Security Notes
+
+- The enquiry form (`id="enquiry-form"`) uses `e.preventDefault()` — it never submits to a server. It exists solely as a realistic test surface for the monitoring system.
+- `TRACKER_CONFIG` is rendered server-side; `consented` is a Python bool stringified to `true`/`false` — it cannot be tampered with after the page loads (it only controls whether tracker.js sets up its listeners, not what the server stores).
+- `ui_session_id` is a server-generated UUID. It is never user-supplied and cannot be influenced by chat input.
