@@ -7,15 +7,17 @@ from datasets import load_dataset  # noqa: F401
 
 from flask import Flask, request, jsonify, render_template_string, session, redirect
 from src.agent_graph import run_agent
+from src.services_db import init_services_db
 from src.database import init_db, save_turn, save_feedback, get_all_stats
 from src.accounts_db import init_accounts_db, verify_pin, get_account_info, create_demo_account
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "demo-secret-change-in-production")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "demo-secret-change-in-production-v2")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 init_db()
 init_accounts_db()
+init_services_db()
 
 # ── Login / Signup page ───────────────────────────────────────────────────────
 
@@ -252,9 +254,6 @@ HTML = """
     <div id="app">
         <div id="escalation">ESCALATED TO HUMAN AGENT</div>
         <div id="chat-window">
-            <div class="bubble-row bot-row">
-                <div class="msg bot">Hello! I'm your AI customer support assistant. How can I help you today?</div>
-            </div>
         </div>
         <div id="meta">
             <span id="intent-label">Intent: -</span>
@@ -483,6 +482,8 @@ def login_post():
 @app.route('/logout', methods=['POST'])
 def logout():
     session.pop('authenticated_customer_id', None)
+    session.pop('pending_calculation', None)      # clear any in-progress slot collection
+    session.pop('customer_display_name', None)    # clear cosmetic display name
     return jsonify({'ok': True, 'redirect': '/login'})
 
 
@@ -515,7 +516,7 @@ def me():
         'name':              info['name'],
         'masked_account_no': info['masked_account_no'],
         'account_type':      info['account_type'],
-        'balance':           f"${info['balance']:,.2f}",
+        'balance':           f"LKR {info['balance']:,.2f}",
     })
 
 
@@ -527,13 +528,27 @@ def chat_endpoint():
     session_id = data.get('session_id', 'unknown')
 
     # Read from Flask session — NEVER from the chat message body
-    session_customer_id = session.get('authenticated_customer_id')
+    session_customer_id  = session.get('authenticated_customer_id')
+    pending_calc         = session.get('pending_calculation')      # multi-turn slot state
+    display_name         = session.get('customer_display_name')    # cosmetic only — never for auth
 
-    response, intent, sentiment, escalated, category = run_agent(
+    response, intent, sentiment, escalated, category, pending_calc, display_name = run_agent(
         message, history,
         session_id=session_id,
         session_customer_id=session_customer_id,
+        pending_calculation=pending_calc,
+        customer_display_name=display_name,
     )
+
+    # Persist or clear pending_calculation for the next turn
+    if pending_calc:
+        session['pending_calculation'] = pending_calc
+    else:
+        session.pop('pending_calculation', None)
+
+    # Persist display name once collected (never overwrite with None if already set)
+    if display_name:
+        session['customer_display_name'] = display_name
 
     turn_id = save_turn(session_id, message, response, intent, sentiment, escalated, category)
 

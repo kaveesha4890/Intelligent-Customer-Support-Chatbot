@@ -11,6 +11,18 @@ class AgentState(TypedDict):
     # Set by run_agent() from flask.session — NEVER from user chat input.
     session_customer_id: Optional[str]
 
+    # Pending multi-turn slot collection for banking service calculators.
+    # Persisted across HTTP requests via flask.session — injected by run_agent().
+    # Format: {"service": str, "slots": dict, "attempts": int} | None
+    pending_calculation: Optional[dict]
+
+    # Display name the customer chose to be called (e.g. "Alice").
+    # IMPORTANT: This is PURELY COSMETIC — used only for warmth in LLM responses.
+    # It is NOT the authenticated identity and must NEVER be used to look up
+    # account data or bypass any security check. Keep completely independent
+    # from session_customer_id, which is the verified security-relevant identity.
+    customer_display_name: Optional[str]
+
     # ── set by individual nodes ────────────────────────────
     intent: Optional[str]
     confidence: Optional[float]

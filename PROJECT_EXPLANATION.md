@@ -3,6 +3,10 @@
 > A beginner-friendly, end-to-end guide to understanding every part of this project.
 > No prior AI knowledge is assumed.
 
+> **Two versions exist in separate git branches:**
+> - `fixed_pipeline` branch — sequential RAG pipeline (no LangGraph)
+> - `agentic_ai` branch — LangGraph state-machine agent (this branch, current)
+
 ---
 
 ## Table of Contents
@@ -39,7 +43,9 @@
 18. [What is LangGraph?](#18-what-is-langgraph)
 19. [Agentic AI Tools](#19-agentic-ai-tools)
 20. [What is MCP (Model Context Protocol)?](#20-what-is-mcp-model-context-protocol)
-21. [Agentic AI — Full Upgrade Plan for This Project](#21-agentic-ai--full-upgrade-plan-for-this-project)
+21. [Agentic AI — Implemented Architecture](#21-agentic-ai--implemented-architecture)
+22. [Account Banking Feature](#22-account-banking-feature)
+23. [Fixed Pipeline vs Agentic — Side-by-Side Comparison](#23-fixed-pipeline-vs-agentic--side-by-side-comparison)
 
 ---
 
@@ -308,63 +314,129 @@ A newer version of `sentence_transformers` added a check for PEFT adapter config
 
 ---
 
+### 4.14 Pipeline Architecture: Fixed Sequence → LangGraph State Machine
+
+| | Before (fixed_pipeline branch) | After (agentic_ai branch) |
+|--|--------|-------|
+| **What** | `chatbot_pipeline.py` — linear function | `agent_graph.py` — LangGraph `StateGraph` |
+| **Routing** | `if/else` inside one function | Conditional edges between named nodes |
+| **State** | Local variables inside `chat()` | `AgentState` TypedDict flowing through the graph |
+| **Tools** | Plain function calls | `@tool` decorated functions via LangChain |
+| **New files** | — | `agent_state.py`, `agent_graph.py`, `agent_tools.py` |
+
+**Why changed:**
+
+The fixed pipeline always runs every step in the same order regardless of what the user said. LangGraph allows each node to decide what happens next via **conditional edges**. A greeting message goes directly to `END` without running intent classification, sentiment analysis, ChromaDB retrieval, or the LLM — saving significant compute. A distressed customer short-circuits to `escalate_node` without hitting retrieval. An account balance query is answered directly from the database without the LLM being involved at all.
+
+The graph also makes the decision flow **visual and explicit** — each routing decision is a named Python function (`route_chitchat`, `route_intent`, `route_sentiment`) rather than buried inside a long pipeline function.
+
+```python
+# Fixed pipeline — every step runs regardless
+def chat(user_message, history):
+    if greeting: return ...          # early exit embedded in if/else
+    classify_intent(...)
+    analyse_sentiment(...)
+    retrieve_top_k(...)
+    generate_response(...)
+
+# Agentic graph — each node is independent, routing is explicit
+graph.add_conditional_edges("chitchat_node", route_chitchat,
+    {"__end__": END, "account_node": "account_node"})
+graph.add_conditional_edges("account_node", route_account,
+    {"__end__": END, "intent_node": "intent_node"})
+graph.add_conditional_edges("sentiment_node", route_sentiment,
+    {"escalate_node": "escalate_node", "retrieve_node": "retrieve_node"})
+```
+
+---
+
+### 4.15 New Feature: Account Balance & Transaction Queries (Demo Banking)
+
+| | Before | After |
+|--|--------|-------|
+| **What** | No account data access | SQLite demo banking database with 15 fake customers |
+| **New files** | — | `src/accounts_db.py`, `seed_accounts.py`, `accounts.db` |
+| **Authentication** | None | bcrypt PIN hashing, Flask session, 5-attempt lockout |
+| **UI** | Chat page only | Login/Signup page shown first, account header bar in chat |
+| **Account queries** | Not handled | Detected before LLM, answered directly from SQLite |
+
+**Why added:**
+
+To demonstrate a realistic banking AI assistant that can answer personal account queries ("what's my balance?", "show my recent transactions") securely. All data is completely simulated — 15 fictional customers with 5 transactions each, using a "DEMO" account number prefix so it is visually obvious no real data is involved.
+
+**Security design:** The authenticated `customer_id` is stored exclusively in the Flask server-side session and passed into the LangGraph state as `session_customer_id`. The LLM **never sees or controls this value** — the `account_node` reads it directly from state and calls the database function. This prevents prompt injection from causing the agent to look up another customer's account.
+
+---
+
 ## 5. System Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          USER (Web Browser)                             │
-│              Types a message at http://127.0.0.1:5000                  │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      ui/app.py  (Flask UI)                              │
-│  - Custom HTML/CSS/JS chat interface                                    │
-│  - 👍/👎 feedback buttons on latest bot message only                   │
-│  - Shows intent, sentiment, category in metadata bar                   │
-│  - /dashboard route for analytics                                       │
-│  - /feedback route saves ratings to SQLite                              │
-└───────────────────────────────┬─────────────────────────────────────────┘
-                                │  POST /chat
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                  src/chatbot_pipeline.py  (Orchestrator)                │
-│                                                                         │
-│  Step 1: Greeting check (embedding similarity vs prototypes)            │
-│          → if greeting/closing: return canned reply immediately         │
-│                                                                         │
-│  Step 2: Intent classification → confidence check                       │
-│          → if first message and confidence < 20%: ask to rephrase      │
-│                                                                         │
-│  Step 3: Sentiment analysis → escalation check                          │
-│          → if escalate: return human handoff message                    │
-│                                                                         │
-│  Step 4: Intent → category mapping (if confidence ≥ 50%)               │
-│  Step 5: Context-enhanced query (prepend last user message)             │
-│  Step 6: ChromaDB search (category-filtered or all)                     │
-│  Step 7: Build prompt (few-shot + history + context + query)            │
-│  Step 8: Ollama LLM → generate response → clean response               │
-└──────┬──────────────┬──────────────┬──────────────────────────┬─────────┘
-       │              │              │                          │
-       ▼              ▼              ▼                          ▼
-┌────────────┐ ┌────────────┐ ┌──────────────────────┐ ┌──────────────────┐
-│  Intent    │ │ Sentiment  │ │   ChromaDB           │ │  LLM Generator   │
-│Classifier  │ │ Analyser   │ │  Vector Store        │ │  (Ollama/Llama)  │
-│            │ │            │ │                      │ │                  │
-│DistilBERT  │ │DistilBERT  │ │ SentenceTransformers │ │  llama3.2:1b     │
-│ Banking77  │ │ SST-2      │ │ all-MiniLM-L6-v2     │ │  local model     │
-│ 77 classes │ │ + keywords │ │ HNSW cosine index    │ │                  │
-│ + greeting │ │            │ │ category filtering   │ │                  │
-│ embeddings │ │            │ │ 51 documents         │ │                  │
-└────────────┘ └────────────┘ └──────────────────────┘ └────────────────-─┘
-                                                                │
-                                                                ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      src/database.py  (SQLite)                          │
-│  chat_history.db — saves every turn:                                    │
-│  session_id, user_msg, bot_msg, intent, category, sentiment,            │
-│  escalated, feedback (👍/👎), timestamp                                 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          USER (Web Browser)                              │
+│              http://127.0.0.1:5000  →  redirects to /login first        │
+└───────────────────────────┬──────────────────────────────────────────────┘
+                            │  Login with Customer ID + PIN
+                            ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                   ui/app.py  (Flask — Login Page)                        │
+│  POST /login → verify_pin() (bcrypt) → session['authenticated_customer_id']│
+│  GET  /me    → returns masked account info for the header bar           │
+│  POST /logout → clears session → back to /login                         │
+└───────────────────────────┬──────────────────────────────────────────────┘
+                            │  Authenticated → chat page
+                            ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                   ui/app.py  (Flask — Chat Page)                         │
+│  - Navy account header (name, masked acct no, balance, logout)           │
+│  - Custom HTML/CSS/JS chat interface                                     │
+│  - 👍/👎 feedback buttons on latest bot message only                    │
+│  - Shows intent, sentiment, category in metadata bar                    │
+│  - /dashboard route for analytics                                        │
+└───────────────────────────┬──────────────────────────────────────────────┘
+                            │  POST /chat  (session_customer_id from flask.session)
+                            ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│              src/agent_graph.py  (LangGraph StateGraph)                  │
+│                                                                          │
+│   AgentState = { user_message, history, session_id,                     │
+│                  session_customer_id, intent, confidence,                │
+│                  sentiment, escalated, category, retrieved_docs,         │
+│                  response }                                              │
+│                                                                          │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐              │
+│  │chitchat_node │───▶│ account_node │───▶│ intent_node  │              │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘              │
+│         │END (greet)        │END (balance)       │                      │
+│                                          ┌───────┴────────┐             │
+│                                    clarify_node    sentiment_node        │
+│                                          │         ┌───────┴───────┐    │
+│                                         END   escalate_node  retrieve_node│
+│                                                    │           │        │
+│                                                   END    generate_node  │
+│                                                               │         │
+│                                                              END        │
+└───────────────────────────┬──────────────────────────────────────────────┘
+          calls tools        │
+          ─────────────────  │
+          ▼         ▼        ▼        ▼
+┌──────────┐ ┌──────────┐ ┌──────────────────────┐ ┌───────────────────┐
+│ Intent   │ │Sentiment │ │   ChromaDB           │ │  LLM Generator    │
+│Classifier│ │Analyser  │ │  Vector Store        │ │  (Ollama/Llama)   │
+│DistilBERT│ │DistilBERT│ │ SentenceTransformers │ │  llama3.2:1b      │
+│ Banking77│ │ SST-2    │ │ all-MiniLM-L6-v2     │ │  local model      │
+│ 77 labels│ │+ keywords│ │ HNSW cosine search   │ │                   │
+└──────────┘ └──────────┘ └──────────────────────┘ └───────────────────┘
+                                                              │
+                           ┌──────────────┐                  │
+                           │ accounts.db  │◀── account_node  │
+                           │ (SQLite)     │    (no LLM used) │
+                           │ 15 demo accts│                  ▼
+                           └──────────────┘  ┌──────────────────────────┐
+                                             │  src/database.py (SQLite) │
+                                             │  chat_history.db          │
+                                             │  session, intent, sentiment│
+                                             │  escalated, feedback, time │
+                                             └──────────────────────────┘
 ```
 
 ---
@@ -765,12 +837,22 @@ Intelligent-Customer-Support-Chatbot/
 │   └── fraud/                    ← 10 files
 │
 ├── src/                          ← Core chatbot logic
-│   ├── chatbot_pipeline.py       ← Orchestrator (greeting check, routing, history, prompt)
+│   │
+│   │  ── Agentic AI (LangGraph) — agentic_ai branch ──────────────────
+│   ├── agent_state.py            ← AgentState TypedDict (shared state for all nodes)
+│   ├── agent_graph.py            ← LangGraph StateGraph: nodes, edges, run_agent()
+│   ├── agent_tools.py            ← @tool decorated functions (intent, sentiment, retrieval, LLM, banking)
+│   ├── accounts_db.py            ← SQLite banking demo: verify_pin(), get_account_info(), get_transactions()
+│   │
+│   │  ── Fixed Pipeline — fixed_pipeline branch (also present here) ──
+│   ├── chatbot_pipeline.py       ← Fixed sequential pipeline (used in fixed_pipeline branch)
+│   │
+│   │  ── Shared by both branches ──────────────────────────────────────
 │   ├── intent_classifier.py      ← DistilBERT fine-tuned on Banking77
 │   ├── sentiment.py              ← Sentiment analysis + escalation logic
 │   ├── retriever.py              ← ChromaDB search interface (wraps knowledge_db.py)
-│   ├── knowledge_db.py           ← ChromaDB operations (NEW — replaces FAISS)
-│   ├── database.py               ← SQLite chat history + feedback (NEW)
+│   ├── knowledge_db.py           ← ChromaDB operations (replaces FAISS)
+│   ├── database.py               ← SQLite chat history + feedback
 │   ├── document_processor.py     ← Loads and splits knowledge base files (LangChain)
 │   ├── embedder.py               ← Legacy FAISS builder (kept for reference)
 │   ├── prompt_templates.py       ← FEW_SHOT_EXAMPLES + CHAIN_OF_THOUGHT_TEMPLATE
@@ -781,20 +863,25 @@ Intelligent-Customer-Support-Chatbot/
 │   ├── faiss_index.bin           ← Legacy (no longer used — replaced by ChromaDB)
 │   └── chunks.pkl                ← Legacy (no longer used)
 │
-├── chroma_db/                    ← ChromaDB vector store (NEW — auto-created)
+├── chroma_db/                    ← ChromaDB vector store (auto-created on first run)
 │   └── (binary files managed by ChromaDB)
 │
-├── chat_history.db               ← SQLite conversation + feedback store (NEW)
+├── accounts.db                   ← SQLite demo banking database (created by seed_accounts.py)
+├── chat_history.db               ← SQLite conversation + feedback store
 │
 ├── ui/
-│   └── app.py                    ← Flask web UI with feedback buttons + /dashboard
+│   └── app.py                    ← Flask web UI: login/signup page, chat page, /dashboard
+│                                    Uses run_agent() in agentic branch
+│
+├── seed_accounts.py              ← Seeds accounts.db with 15 demo customers + 75 transactions
 │
 ├── evaluation/
 │   ├── run_eval.py               ← Evaluation script (BLEU, ROUGE-L)
 │   ├── test_queries.csv          ← Test question/answer pairs
 │   └── results.csv               ← Output after running evaluation
 │
-├── notebooks/                    ← Jupyter notebooks (experiments)
+├── AGENTIC_WORKFLOW.md           ← Detailed technical docs for the agentic system
+├── PROJECT_EXPLANATION.md        ← This file — complete project guide
 ├── train_intent_classifier.py    ← DistilBERT fine-tuning script (plain PyTorch)
 └── build_index.py                ← Legacy index builder (now handled by knowledge_db.py)
 ```
@@ -803,7 +890,123 @@ Intelligent-Customer-Support-Chatbot/
 
 ## 9. What Each File Actually Does (with Code)
 
-### `src/chatbot_pipeline.py` — The Orchestrator
+### `src/agent_state.py` — Shared State TypedDict (Agentic Branch)
+
+```python
+class AgentState(TypedDict):
+    # Set before graph starts (by run_agent)
+    user_message:         str
+    history:              List[Tuple[str, str]]   # [(user, bot), ...]
+    session_id:           str
+    session_customer_id:  Optional[str]  # from Flask session — NEVER from user input
+
+    # Set by individual nodes as the graph executes
+    intent:        Optional[str]        # e.g. "card_not_working"
+    confidence:    Optional[float]      # 0.0 – 1.0
+    sentiment:     Optional[str]        # "Positive" | "Negative" | "Neutral" | "Crisis"
+    escalated:     Optional[bool]
+    category:      Optional[str]        # "fraud" | "billing" | "technical" | "account"
+    retrieved_docs: Optional[List[str]]
+    response:      Optional[str]        # final reply
+```
+
+All graph nodes read from and write back to this single dictionary. Nodes only set the fields they own — everything else passes through unchanged.
+
+---
+
+### `src/agent_graph.py` — LangGraph State Machine (Agentic Branch)
+
+```python
+def build_agent():
+    graph = StateGraph(AgentState)
+
+    graph.add_node("chitchat_node",  chitchat_node)   # greeting / ack / continuation
+    graph.add_node("account_node",   account_node)    # balance / transaction queries
+    graph.add_node("intent_node",    intent_node)     # DistilBERT Banking77
+    graph.add_node("sentiment_node", sentiment_node)  # DistilBERT SST-2 + keywords
+    graph.add_node("clarify_node",   clarify_node)    # "could you rephrase?"
+    graph.add_node("escalate_node",  escalate_node)   # human handoff
+    graph.add_node("retrieve_node",  retrieve_node)   # ChromaDB search
+    graph.add_node("generate_node",  generate_node)   # Llama 3.2 via Ollama
+
+    graph.set_entry_point("chitchat_node")
+
+    # Conditional routing
+    graph.add_conditional_edges("chitchat_node", route_chitchat,
+        {"__end__": END, "account_node": "account_node"})
+    graph.add_conditional_edges("account_node", route_account,
+        {"__end__": END, "intent_node": "intent_node"})
+    graph.add_conditional_edges("intent_node", route_intent,
+        {"clarify_node": "clarify_node", "sentiment_node": "sentiment_node"})
+    graph.add_conditional_edges("sentiment_node", route_sentiment,
+        {"escalate_node": "escalate_node", "retrieve_node": "retrieve_node"})
+
+    return graph.compile()
+
+def run_agent(user_message, history, session_id, session_customer_id=None):
+    result = agent.invoke({
+        "user_message": user_message,
+        "history": history,
+        "session_customer_id": session_customer_id,  # from Flask session — trusted
+        ...
+    })
+    return result["response"], result["intent"], result["sentiment"], ...
+```
+
+---
+
+### `src/agent_tools.py` — @tool Decorated Functions (Agentic Branch)
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def tool_classify_intent(message: str) -> dict:
+    """Classify the banking support intent. Returns {intent, confidence}."""
+    return classify_intent(message)
+
+@tool
+def tool_get_account_balance(customer_id: str) -> str:
+    """Return formatted account balance for an authenticated customer.
+    SECURITY: customer_id must come from AgentState, not from user input."""
+    info = get_account_info(customer_id)
+    return f"Account: {info['masked_account_no']}  Balance: ${info['balance']:,.2f}"
+
+@tool
+def tool_get_recent_transactions(customer_id: str) -> str:
+    """Return 5 most recent transactions for an authenticated customer."""
+    txns = get_transactions(customer_id, limit=5)
+    ...
+```
+
+Each node calls tools via `.invoke({...})`. The account tools receive `customer_id` from `state["session_customer_id"]` — a value set by `run_agent()` from the Flask session. The LLM never supplies this value.
+
+---
+
+### `src/accounts_db.py` — Demo Banking Database (Both Branches)
+
+```python
+def verify_pin(customer_id: str, pin: str) -> dict:
+    # Returns SAME error for wrong ID or wrong PIN (prevents enumeration)
+    # bcrypt.checkpw — PIN never logged or stored
+    # Lockout after 5 failures in 15 minutes
+
+def get_account_info(customer_id: str) -> dict | None:
+    # Returns masked_account_no = "**** " + account_no[-4:]
+    # NEVER includes full account_no or pin_hash in return value
+
+def get_transactions(customer_id: str, limit: int = 5) -> list[dict]:
+    # Parameterized SQL — no injection risk
+    # Capped at 20 records
+
+def create_demo_account(name, customer_id, pin) -> dict:
+    # Server-side validation of all inputs
+    # bcrypt hash before storage, plaintext pin discarded immediately
+```
+
+---
+
+### `src/chatbot_pipeline.py` — The Orchestrator (Fixed Pipeline Branch)
 
 ```python
 def chat(user_message: str, history: list):
@@ -989,7 +1192,7 @@ This was added because the LLM was hallucinating placeholder text (`[insert emai
 
 ## 11. Assignment Technique Coverage
 
-The project satisfies **4 out of 5** required technique categories (minimum: 3):
+The project satisfies all required technique categories:
 
 | Requirement | Met | How |
 |-------------|-----|-----|
@@ -1001,6 +1204,8 @@ The project satisfies **4 out of 5** required technique categories (minimum: 3):
 | **Prompt Engineering — Systematic design** | ✓ | `CHAIN_OF_THOUGHT_TEMPLATE` with explicit rules |
 | **Prompt Engineering — Chain-of-thought** | ✓ | Rules guide LLM reasoning (numbered steps, no hallucination, history awareness) |
 | **Prompt Engineering — In-context (few-shot)** | ✓ | `FEW_SHOT_EXAMPLES` — 4 worked examples per category shown at inference |
+| **Agentic AI — LangGraph** | ✓ | `StateGraph` with 8 nodes, conditional routing, `@tool` functions (`agent_graph.py`) |
+| **Agentic AI — Tool use** | ✓ | `@tool` decorated functions in `agent_tools.py` called by graph nodes |
 | Generative AI (VAE/GAN/Diffusion) | ✗ | Not applicable to a text chatbot |
 
 ---
@@ -1016,14 +1221,18 @@ venv\Scripts\activate   # Windows
 
 # 2. Install dependencies
 pip install transformers torch datasets sentence-transformers
-pip install langchain langchain-community chromadb flask ollama
+pip install langchain langchain-community langgraph chromadb flask ollama bcrypt
 pip install sklearn nltk rouge-score pandas
 
-# 3. Install Ollama (https://ollama.com) and pull the model
+# 3. Install Ollama and pull the model
+ollama serve          # start Ollama (separate terminal)
 ollama pull llama3.2:1b
 
 # 4. Train the intent classifier (one-time, ~20 minutes on GPU)
 python train_intent_classifier.py
+
+# 5. Seed the demo banking database (one-time)
+python seed_accounts.py
 ```
 
 ### Start the app
@@ -1031,9 +1240,21 @@ python train_intent_classifier.py
 ```bash
 python ui/app.py
 # Open http://127.0.0.1:5000
+# You will be redirected to the login page automatically
 ```
 
-ChromaDB will auto-populate from the knowledge base `.txt` files on first message. No need to run `build_index.py`.
+ChromaDB will auto-populate from the knowledge base `.txt` files on first message.
+
+### Demo login credentials
+
+| Customer ID | Name | PIN |
+|---|---|---|
+| DEMO001 | Alice Johnson | 1234 |
+| DEMO002 | Bob Smith | 2345 |
+| DEMO004 | David Brown | 4567 |
+| DEMO008 | Henry Moore | 8901 |
+
+(Full list of 15 accounts is in `AGENTIC_WORKFLOW.md` section 15.)
 
 ### Analytics dashboard
 
@@ -1048,6 +1269,7 @@ http://127.0.0.1:5000/dashboard
 | `models/intent_classifier/` | `train_intent_classifier.py` | Fine-tuned DistilBERT |
 | `chroma_db/` | First chat message | ChromaDB vector store |
 | `chat_history.db` | App startup | SQLite conversation log |
+| `accounts.db` | `seed_accounts.py` | Demo banking database |
 
 ---
 
@@ -1071,24 +1293,22 @@ This project is an AI customer support chatbot for the banking domain that combi
 | Few-shot examples in prompt | ✓ Done — 4 examples per category |
 | Conversation history in prompt | ✓ Done — last 4 turns |
 | Greeting detection | ✓ Done — embedding similarity |
+| **LangGraph agentic pipeline** | ✓ Done — `agent_graph.py` with 8 nodes and conditional routing |
+| **@tool decorated agent tools** | ✓ Done — `agent_tools.py` with 6 tool functions |
+| **Account banking feature** | ✓ Done — SQLite demo banking, bcrypt PIN, Flask session auth |
+| **Login / Signup UI** | ✓ Done — Banking-style login page, shown before chat |
 
-### Short-term Remaining
+### Remaining / Optional
 
 | Enhancement | What It Would Do | Effort |
 |---|---|---|
 | **Response streaming** | Show LLM output token-by-token instead of waiting | Low |
 | **Larger Llama model** | `llama3.2:3b` or `llama3:8b` for better quality | Very low |
 | **Re-ranking** | Cross-encoder to re-score ChromaDB results for precision | Low |
-| **Multilingual support** | Use multilingual MiniLM for non-English queries | Medium |
-
-### Medium-term
-
-| Enhancement | What It Would Do | Effort |
-|---|---|---|
-| **Human handoff integration** | Route escalated chats to Zendesk/ticket system | High |
 | **Hybrid search (BM25 + ChromaDB)** | Keyword + semantic search combined | Medium |
-| **LangGraph agentic pipeline** | Replace fixed pipeline with conditional graph | Medium |
+| **Human handoff integration** | Route escalated chats to Zendesk/ticket system | High |
 | **Active learning** | Use low-confidence predictions to improve intent model | High |
+| **MCP server** | Expose knowledge base as MCP tool for Claude Desktop | Medium |
 
 ---
 
@@ -1300,18 +1520,91 @@ Any MCP-compatible client (Claude Desktop, etc.) can then use your knowledge bas
 
 ---
 
-## 21. Agentic AI — Full Upgrade Plan for This Project
+## 21. Agentic AI — Implemented Architecture
 
-| Stage | What It Adds | Technology |
+All stages described below have been implemented in the `agentic_ai` branch.
+
+| Stage | What It Adds | Status |
 |---|---|---|
-| **1 (current)** | Smart pipeline with ChromaDB, SQLite, few-shot, category routing | Flask + ChromaDB + SQLite |
-| **2** | Conditional routing graph (escalate vs answer vs clarify) | LangGraph |
-| **3** | LLM picks which tool to call dynamically | LangChain Tools + `@tool` decorator |
-| **4** | Knowledge base becomes a reusable external service | MCP Server |
-| **5** | Multiple specialized agents (FAQ agent, account agent, escalation agent) | Multi-Agent LangGraph |
+| **1** | Smart pipeline with ChromaDB, SQLite, few-shot, category routing | ✓ Done (`fixed_pipeline` branch) |
+| **2** | Conditional routing graph (chitchat → account → intent → sentiment → retrieve → generate) | ✓ Done — `agent_graph.py` LangGraph |
+| **3** | `@tool` decorated functions called by graph nodes | ✓ Done — `agent_tools.py` |
+| **4** | Account balance / transactions answered from authenticated SQLite session | ✓ Done — `accounts_db.py` + `account_node` |
+| **5** | Banking login UI, Flask session auth, bcrypt PIN, lockout | ✓ Done — `ui/app.py` |
 
-> The current project is a strong foundation. Stage 2 (LangGraph) is achievable in a single afternoon and would make the routing logic visual and easy to extend.
+### Graph Execution Example — "What's my balance?"
+
+```
+run_agent("What's my balance?", history=[], session_customer_id="DEMO001")
+    │
+    ├─ chitchat_node → no greeting detected → continues
+    ├─ account_node  → "my balance" pattern detected
+    │      reads state["session_customer_id"] = "DEMO001"  (from Flask session)
+    │      calls tool_get_account_balance.invoke({"customer_id": "DEMO001"})
+    │      → accounts_db.get_account_info("DEMO001")
+    │      → returns "Your account balance:\n  Account: **** 2345\n  Balance: $5,432.50"
+    │      sets state["response"] = "..."
+    └─ END  (intent_node, sentiment_node, retrieve_node, generate_node never called)
+```
+
+This is the key advantage of the agentic graph: **account queries cost zero LLM calls**.
 
 ---
 
-*This document reflects the complete current state of the project including all improvements made during development. A reader with no prior AI background should be able to understand the full system after reading it.*
+## 22. Account Banking Feature
+
+> All data is completely fictional. The "DEMO" prefix on account numbers makes this visually obvious.
+
+### What the feature does
+- Forces login before the chat can be accessed (banking-app pattern)
+- Shows a navy account header bar with name, masked account number, balance, and logout
+- Understands "what's my balance?" and "show my transactions" inside the chat
+- Answers from the local SQLite database — no LLM involved
+- 15 demo customers pre-loaded, 5 transactions each
+
+### Security properties
+
+| Property | Implementation |
+|---|---|
+| PIN storage | bcrypt hash with random salt — plaintext never stored anywhere |
+| Session management | `flask.session` server-side — customer_id never in URL or request body |
+| Injection prevention | `customer_id` sourced from Flask session only, never from chat message |
+| SQL injection | All queries use parameterised `?` placeholders |
+| User enumeration | Same error message for wrong customer ID and wrong PIN |
+| Brute force | 5-attempt lockout per customer_id per 15 minutes |
+| Account number | Masked to last 4 digits (`**** 2345`) in all responses and UI |
+| LLM isolation | Account queries short-circuit before `generate_node` — LLM never sees account data |
+
+### Demo account queries to try (after login)
+```
+"What's my balance?"
+"Show my recent transactions"
+"Show my transaction history"
+"How much do I have in my account?"
+```
+
+---
+
+## 23. Fixed Pipeline vs Agentic — Side-by-Side Comparison
+
+| Aspect | Fixed Pipeline (`fixed_pipeline` branch) | Agentic AI (`agentic_ai` branch) |
+|---|---|---|
+| **Architecture** | Single `chat()` function with if/else | LangGraph `StateGraph` with 8 nodes |
+| **Routing** | Sequential — every step always runs | Conditional — nodes short-circuit early |
+| **State management** | Local variables in one function | `AgentState` TypedDict flows between nodes |
+| **Tool framework** | Plain function calls | `@tool` decorated LangChain functions |
+| **Greeting handling** | `if quick_reply: return` inside pipeline | `chitchat_node` → `END` via conditional edge |
+| **Account queries** | `_detect_account_query()` + `_handle_account_query()` inside pipeline | `account_node` as a dedicated graph node |
+| **Escalation** | `if sentiment_result["escalate"]: return` inline | `escalate_node` reached via `route_sentiment` edge |
+| **Low confidence** | `if confidence < 0.20 and not history: return` inline | `clarify_node` reached via `route_intent` edge |
+| **Extensibility** | Add more if/else inside one function | Add a new node + connect with edges |
+| **Observability** | Single function trace | Each node's inputs/outputs are independently inspectable |
+| **Key files** | `chatbot_pipeline.py`, `account_tool.py` | `agent_state.py`, `agent_graph.py`, `agent_tools.py` |
+
+### When to use which
+- **Fixed pipeline**: Simpler to understand, fewer dependencies, easier to debug step-by-step, better for learning the fundamentals.
+- **Agentic (LangGraph)**: Cleaner routing logic, more maintainable as complexity grows, nodes are independently testable, industry-standard pattern for production AI systems.
+
+---
+
+*This document covers both the fixed pipeline (v1) and the agentic LangGraph implementation (v2). For detailed technical reference of the agentic system see `AGENTIC_WORKFLOW.md`.*
