@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Housing Loan — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Housing Loan — {{ rate.annual_rate }}% p.a., up to {{ rate.max_tenure_months // 12 }} years. Own your dream home with Sri Lanka's most trusted bank.{% endblock %}
+{% block active_loan_housing %}class="active"{% endblock %}
+
+{% block content %}
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Housing Loan</h1>
+            <p>Make homeownership a reality with our long-tenure housing loan. Whether you're building, buying, or renovating — we offer competitive rates and up to {{ rate.max_tenure_months // 12 }} years to repay.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">Annual Rate</span>
+            <span class="hero-badge-rate">{{ "%.2f"|format(rate.annual_rate) }}%</span>
+            <span class="hero-badge-sub">p.a. (reducing balance)</span>
+        </div>
+    </div>
+</div>
+
+<div class="product-content">
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Rate &amp; Terms</div>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead><tr><th>Parameter</th><th>Details</th></tr></thead>
+                    <tbody>
+                        <tr><td>Interest Rate</td><td class="gold-val">{{ "%.2f"|format(rate.annual_rate) }}% p.a.</td></tr>
+                        <tr><td>Rate Type</td><td class="accent-val">Reducing Balance</td></tr>
+                        <tr><td>Maximum Tenure</td><td class="accent-val">{{ rate.max_tenure_months }} months ({{ rate.max_tenure_months // 12 }} years)</td></tr>
+                        <tr><td>Loan Type</td><td>Secured — Mortgage on property</td></tr>
+                        <tr><td>LTV Ratio</td><td>Up to 80% of property value</td></tr>
+                        <tr><td>Processing Fee</td><td>Subject to credit assessment</td></tr>
+                        <tr><td>Prepayment</td><td>Allowed — partial or full; terms apply</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>Indicative rates only.</strong> Final terms are subject to property valuation, income verification, and credit assessment. Rates shown are identical to those used by our AI support chatbot's calculator.
+            </div>
+        </div>
+    </div>
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Start Your Application</h3>
+            <p>Visit a branch with NIC, 3 months payslips, and property documents.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Apply at Branch</span>
+            <a href="/" class="btn-cta-outline">Calculate EMI with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Key Benefits</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Up to {{ rate.max_tenure_months // 12 }} years repayment tenure</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Among the lowest housing loan rates in Sri Lanka</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Finance purchase, construction, or renovation</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Loan top-up available for existing customers</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot for instant EMI estimates 24/7</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

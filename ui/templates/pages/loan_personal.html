@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}Personal Loan — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Personal Loan — {{ rate.annual_rate }}% p.a., up to {{ rate.max_tenure_months }} months. Borrow for any personal need with fast approval.{% endblock %}
+{% block active_loan_personal %}class="active"{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Personal Loan</h1>
+            <p>Finance life's big moments — from home renovations and weddings to medical expenses and travel — with a flexible, fully unsecured personal loan at a competitive fixed rate.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">Annual Rate</span>
+            <span class="hero-badge-rate">{{ "%.2f"|format(rate.annual_rate) }}%</span>
+            <span class="hero-badge-sub">p.a. (reducing balance)</span>
+        </div>
+    </div>
+</div>
+
+<!-- Content grid -->
+<div class="product-content">
+    <!-- Main: rate details -->
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Rate &amp; Terms</div>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Interest Rate</td><td class="gold-val">{{ "%.2f"|format(rate.annual_rate) }}% p.a.</td></tr>
+                        <tr><td>Rate Type</td><td class="accent-val">Reducing Balance</td></tr>
+                        <tr><td>Maximum Tenure</td><td class="accent-val">{{ rate.max_tenure_months }} months ({{ (rate.max_tenure_months // 12)|int }} years)</td></tr>
+                        <tr><td>Loan Type</td><td>Unsecured Personal</td></tr>
+                        <tr><td>Processing Fee</td><td>Subject to credit assessment</td></tr>
+                        <tr><td>Prepayment</td><td>Allowed — contact a branch for terms</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>Indicative rates only.</strong> Final rate, approved amount, and tenure are subject to income verification, credit scoring, and applicable bank policies. This page displays the same rates used by our support chatbot's EMI calculator.
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Ready to Apply?</h3>
+            <p>Visit any AutoTrust Bank branch with your NIC, income proof, and bank statement.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Apply at Branch</span>
+            <a href="/" class="btn-cta-outline">Calculate EMI with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Why Choose AutoTrust?</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>No collateral required — fully unsecured</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Flexible repayment up to {{ rate.max_tenure_months }} months</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Fixed rate — no surprise EMI changes</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Quick approval for existing customers</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot to calculate your exact EMI instantly</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

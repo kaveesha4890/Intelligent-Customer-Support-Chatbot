@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Gold Pawning — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Gold Pawning — get an immediate cash advance against your gold jewellery at transparent rates. 18ct, 22ct, and 24ct accepted.{% endblock %}
+{% block active_pawning %}class="active"{% endblock %}
+
+{% block content %}
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Gold Pawning</h1>
+            <p>Turn your gold into instant liquidity. AutoTrust Bank offers transparent, fair advance rates on 18ct, 22ct, and 24ct gold jewellery — with no hidden charges and a clear repayment schedule.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">22ct Advance Rate</span>
+            {% for r in rates if r.carat == 22 %}
+            <span class="hero-badge-rate">LKR {{ "{:,.0f}".format(r.rate_per_gram) }}</span>
+            <span class="hero-badge-sub">per gram (bank assessed rate)</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="product-content">
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Advance Rate Card</div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+                All rates below are the <strong>bank's assessed advance rates</strong> — not the live gold market price. These are the exact same rates our AI chatbot uses when you ask "how much can I get for my gold."
+            </p>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead>
+                        <tr>
+                            <th>Gold Purity</th>
+                            <th>Advance Rate / gram</th>
+                            <th>LTV</th>
+                            <th>Monthly Interest</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rates %}
+                        <tr>
+                            <td>{{ r.carat }}ct Gold</td>
+                            <td class="gold-val">LKR {{ "{:,.2f}".format(r.rate_per_gram) }}</td>
+                            <td class="accent-val">{{ "%.0f"|format(r.ltv_percent) }}%</td>
+                            <td style="color:var(--navy-mid);font-weight:600;">{{ "%.2f"|format(r.monthly_interest_rate) }}% / month</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>DEMO MODE — Simulated Data Only.</strong> Advance amount is based on weight × bank rate per gram × LTV %. Actual advance is subject to physical appraisal and authentication at a branch. These simulated rates are used only for demonstration.
+            </div>
+        </div>
+    </div>
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Get Instant Cash</h3>
+            <p>Bring your gold item and NIC to any AutoTrust Bank branch for a free assessment.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Visit a Branch</span>
+            <a href="/" class="btn-cta-outline">Estimate Advance with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Key Benefits</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>18ct, 22ct, and 24ct gold accepted</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Transparent, published advance rates</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>No income verification required</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Secure, insured storage at branch</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot for instant advance estimates 24/7</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

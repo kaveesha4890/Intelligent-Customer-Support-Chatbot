@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Fixed Deposits — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Fixed Deposits — earn up to {{ rates[-1].annual_rate if rates else '11.50' }}% p.a. on your savings with guaranteed returns and flexible tenures.{% endblock %}
+{% block active_fd %}class="active"{% endblock %}
+
+{% block content %}
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Fixed Deposits</h1>
+            <p>Grow your savings with guaranteed returns. Choose from flexible tenures starting at 3 months and earn up to <strong style="color:var(--accent);">{{ rates | map(attribute='annual_rate') | max | round(2) }}% p.a.</strong> with full capital protection.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">Up to</span>
+            <span class="hero-badge-rate">{{ rates | map(attribute='annual_rate') | max | round(2) }}%</span>
+            <span class="hero-badge-sub">p.a. guaranteed returns</span>
+        </div>
+    </div>
+</div>
+
+<div class="product-content">
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Current FD Rate Card</div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+                Rates shown below are the <strong>exact same rates</strong> our AI support chatbot uses for FD maturity calculations — there is no discrepancy between what the chatbot tells you and what you see here.
+            </p>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead>
+                        <tr>
+                            <th>Tenure</th>
+                            <th>Annual Rate</th>
+                            <th>Early Withdrawal Penalty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rates %}
+                        <tr>
+                            <td>{{ r.tenure_months }} months{% if r.tenure_months >= 12 %} ({{ r.tenure_months // 12 }} yr{% if r.tenure_months > 12 %}s{% endif %}){% endif %}</td>
+                            <td class="gold-val">{{ "%.2f"|format(r.annual_rate) }}% p.a.</td>
+                            <td style="color:var(--danger);">{{ "%.2f"|format(r.early_withdrawal_penalty_rate) }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>DEMO MODE — Simulated Data Only.</strong> These are example rates for academic / demonstration purposes. Interest is calculated as simple interest and applied at maturity. Early withdrawal attracts the penalty rate shown above applied to the interest earned.
+            </div>
+        </div>
+    </div>
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Open an FD Today</h3>
+            <p>Minimum deposit: LKR 10,000. Visit any branch with NIC and your AutoTrust account details.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Open at Branch</span>
+            <a href="/" class="btn-cta-outline">Calculate Maturity with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Key Benefits</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>100% capital guaranteed</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Tenures from 3 months to 5 years</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Interest paid at maturity or monthly (ask at branch)</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Auto-renewal option available</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot calculates your exact maturity amount instantly</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

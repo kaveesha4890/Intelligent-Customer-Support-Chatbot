@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Education Loan — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Education Loan — {{ rate.annual_rate }}% p.a., up to {{ rate.max_tenure_months // 12 }} years. Invest in your future with flexible student financing.{% endblock %}
+{% block active_loan_education %}class="active"{% endblock %}
+
+{% block content %}
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Education Loan</h1>
+            <p>Invest in knowledge today and repay at your own pace. AutoTrust's Education Loan covers tuition, accommodation, and study materials — locally or abroad — with a grace period during your studies.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">Annual Rate</span>
+            <span class="hero-badge-rate">{{ "%.2f"|format(rate.annual_rate) }}%</span>
+            <span class="hero-badge-sub">p.a. (reducing balance)</span>
+        </div>
+    </div>
+</div>
+
+<div class="product-content">
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Rate &amp; Terms</div>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead><tr><th>Parameter</th><th>Details</th></tr></thead>
+                    <tbody>
+                        <tr><td>Interest Rate</td><td class="gold-val">{{ "%.2f"|format(rate.annual_rate) }}% p.a.</td></tr>
+                        <tr><td>Rate Type</td><td class="accent-val">Reducing Balance</td></tr>
+                        <tr><td>Maximum Tenure</td><td class="accent-val">{{ rate.max_tenure_months }} months ({{ rate.max_tenure_months // 12 }} years)</td></tr>
+                        <tr><td>Loan Type</td><td>Secured or Unsecured (based on amount)</td></tr>
+                        <tr><td>Covers</td><td>Tuition, accommodation, books &amp; materials</td></tr>
+                        <tr><td>Eligible Institutions</td><td>Government &amp; recognised private universities, local &amp; overseas</td></tr>
+                        <tr><td>Grace Period</td><td>Interest-only during study period (ask at branch)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>Indicative rates only.</strong> Final terms subject to institutional acceptance, income of guarantor, and credit assessment. Rates are identical to those used by our AI support chatbot.
+            </div>
+        </div>
+    </div>
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Invest in Your Future</h3>
+            <p>Bring your admission letter, NIC, guarantor details, and income proof.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Apply at Branch</span>
+            <a href="/" class="btn-cta-outline">Calculate EMI with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Key Benefits</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Finance local and overseas education</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Grace period during your study years</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Up to {{ rate.max_tenure_months // 12 }} years total repayment</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Disbursed directly to institution on request</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot for instant EMI estimates 24/7</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

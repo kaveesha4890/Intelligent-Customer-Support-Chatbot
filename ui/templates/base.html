@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}AutoTrust Bank — Banking That Runs Itself.{% endblock %}">
+    <title>{% block title %}AutoTrust Bank{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body style="display:flex;flex-direction:column;min-height:100vh;">
+
+    <!-- Utility Bar -->
+    <div class="utility-bar">
+        <a href="#">24/7 Support</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Find a Branch</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Help Centre</a>
+    </div>
+
+    <!-- Nav Bar -->
+    <nav class="nav-bar">
+        <a href="/" class="nav-logo">
+            <span class="logo-auto">Auto</span><span class="logo-trust">Trust</span>&nbsp;<span class="logo-bank">Bank</span>
+        </a>
+        <div class="nav-links">
+            <!-- Products Dropdown -->
+            <div class="nav-dropdown">
+                <span class="nav-drop-trigger {% block nav_products_class %}active{% endblock %}">
+                    Products <span class="nav-drop-arrow">▼</span>
+                </span>
+                <div class="nav-drop-menu">
+                    <div class="nav-drop-section">Loans</div>
+                    <a href="/loans/personal" {% block active_loan_personal %}{% endblock %}>Personal Loan</a>
+                    <a href="/loans/housing"  {% block active_loan_housing  %}{% endblock %}>Housing Loan</a>
+                    <a href="/loans/vehicle"  {% block active_loan_vehicle  %}{% endblock %}>Vehicle Loan</a>
+                    <a href="/loans/education"{% block active_loan_education%}{% endblock %}>Education Loan</a>
+                    <div class="nav-drop-divider"></div>
+                    <a href="/deposits/fixed-deposits" {% block active_fd      %}{% endblock %}>Fixed Deposits</a>
+                    <a href="/services/pawning"        {% block active_pawning %}{% endblock %}>Gold Pawning</a>
+                    <a href="/cards"                   {% block active_cards   %}{% endblock %}>Cards</a>
+                    <a href="/transfers"               {% block active_transfers %}{% endblock %}>Transfers &amp; FX</a>
+                </div>
+            </div>
+            <a href="/">Support Chat</a>
+            <a href="/dashboard">Analytics</a>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <div class="product-outer">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <footer class="product-footer">
+        <span class="footer-copy">&copy; 2025 AutoTrust Bank. All simulated data — for demonstration purposes only.</span>
+        <span class="demo-badge" style="font-size:11px;padding:4px 12px;">&#128274; DEMO MODE &mdash; Simulated Data Only</span>
+    </footer>
+
+</body>
+</html>

@@ -207,6 +207,48 @@ def get_all_fx_rates() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# ── full rate-card tables (for public product pages) ─────────────────────────
+
+def get_all_fd_rates() -> list[dict]:
+    """Return all FD rate tiers ordered by tenure_months (for the FD product page)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT tenure_months, annual_rate, early_withdrawal_penalty_rate "
+            "FROM fd_rates ORDER BY tenure_months"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_loan_rates() -> list[dict]:
+    """Return all loan rate rows (for a generic loans overview page if needed)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT loan_type, annual_rate, max_tenure_months "
+            "FROM loan_rates ORDER BY loan_type"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_pawning_rates() -> list[dict]:
+    """Return all pawning rate rows ordered by carat (for the Pawning product page)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT carat, rate_per_gram, ltv_percent, monthly_interest_rate "
+            "FROM pawning_rates ORDER BY carat"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_transfer_fees() -> list[dict]:
+    """Return all transfer fee rows (for the Transfers product page)."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT transfer_type, min_amount, max_amount, fee_type, fee_value, min_fee "
+            "FROM transfer_fees ORDER BY transfer_type, min_amount"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ── customer product queries (session_customer_id only) ──────────────────────
 
 def get_my_fixed_deposits(customer_id: str) -> list[dict]:

@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}Business Loan — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Business Loan — {{ rate.annual_rate }}% p.a., up to {{ rate.max_tenure_months }} months. Grow your business with flexible financing tailored for Sri Lankan enterprises.{% endblock %}
+{% block active_loan_business %}class="active"{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Business Loan</h1>
+            <p>Fuel your business growth — from working capital and equipment purchases to expansion and inventory — with a structured business loan at a competitive rate tailored for Sri Lankan enterprises.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">Annual Rate</span>
+            <span class="hero-badge-rate">{{ "%.2f"|format(rate.annual_rate) }}%</span>
+            <span class="hero-badge-sub">p.a. (reducing balance)</span>
+        </div>
+    </div>
+</div>
+
+<!-- Content grid -->
+<div class="product-content">
+    <!-- Main: rate details -->
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Rate &amp; Terms</div>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Interest Rate</td><td class="gold-val">{{ "%.2f"|format(rate.annual_rate) }}% p.a.</td></tr>
+                        <tr><td>Rate Type</td><td class="accent-val">Reducing Balance</td></tr>
+                        <tr><td>Maximum Tenure</td><td class="accent-val">{{ rate.max_tenure_months }} months ({{ (rate.max_tenure_months // 12)|int }} years)</td></tr>
+                        <tr><td>Loan Type</td><td>Secured Business</td></tr>
+                        <tr><td>Eligible Applicants</td><td>Sole proprietors, partnerships, private limited companies</td></tr>
+                        <tr><td>Processing Fee</td><td>Subject to credit assessment</td></tr>
+                        <tr><td>Prepayment</td><td>Allowed — contact a branch for terms</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>Indicative rates only.</strong> Final rate, approved amount, and tenure are subject to business financials, credit scoring, collateral valuation, and applicable bank policies. This page displays the same rates used by our support chatbot's EMI calculator.
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Ready to Apply?</h3>
+            <p>Visit any AutoTrust Bank branch with your business registration, audited financials, and NIC.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Apply at Branch</span>
+            <a href="/" class="btn-cta-outline">Calculate EMI with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Why Choose AutoTrust?</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Flexible tenure up to {{ (rate.max_tenure_months // 12)|int }} years</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Suitable for working capital, equipment &amp; expansion</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Fixed rate — predictable monthly installments</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Dedicated relationship manager for business clients</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot to calculate your exact EMI instantly</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

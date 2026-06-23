@@ -23,6 +23,11 @@ class AgentState(TypedDict):
     # from session_customer_id, which is the verified security-relevant identity.
     customer_display_name: Optional[str]
 
+    # The Flask request.host_url (e.g. "http://127.0.0.1:5000/") passed in by
+    # the /chat route so banking_services_node can build deterministic product
+    # page URLs via get_site_url(). Never generated or modified by any LLM node.
+    host_url: Optional[str]
+
     # ── set by individual nodes ────────────────────────────
     intent: Optional[str]
     confidence: Optional[float]

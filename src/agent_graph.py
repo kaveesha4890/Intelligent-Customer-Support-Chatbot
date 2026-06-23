@@ -33,6 +33,7 @@ from src.slot_extraction import (
     extract_currency_code,
 )
 from src.prompt_templates import CHAIN_OF_THOUGHT_TEMPLATE, FEW_SHOT_EXAMPLES, PERSONA_PROMPT
+from src.site_routes import get_site_url
 import src.retriever as _retriever
 from src.retriever import init_retriever
 
@@ -211,6 +212,42 @@ _SHARED_DISCLAIMER = (
     "*This is not a commitment to approve or disburse — "
     "final terms require branch verification.*"
 )
+
+# ── URL injection helpers ─────────────────────────────────────────────────────
+# Maps the internal service name (and loan_type slot) to a SITE_ROUTES key.
+# The LLM never sees these URLs — they are appended in Python before the
+# response is returned, using the same bypass principle as rates and balances.
+
+# For my-records queries (service_key is the MY_CHECKS tuple label)
+_MY_RECORDS_URL_KEY: dict[str, str] = {
+    "fixed_deposits":  "fd_calculator",
+    "pawning_records": "pawning_info",
+    "cards":           "card_services",
+    # "loans": intentionally omitted — no generic loans page; type unknown at this point
+}
+
+
+def _append_service_url(service: str, slots: dict, host_url: str) -> str:
+    """Return a formatted URL line for the response, or '' if not applicable.
+
+    Called only after a successful calculation — never in error or slot-question paths.
+    The URL is produced deterministically from SITE_ROUTES; the LLM never generates it.
+    """
+    if not host_url:
+        return ""
+    if service == "fd":
+        key = "fd_calculator"
+    elif service == "loan":
+        loan_type = (slots.get("loan_type") or "").lower()
+        key = f"loan_{loan_type}"  # e.g. loan_personal, loan_housing — returns None if type missing
+    elif service == "pawning":
+        key = "pawning_info"
+    elif service in ("transfer", "fx"):
+        key = "money_transfer"
+    else:
+        return ""
+    url = get_site_url(key, host_url)
+    return f"\n\nView current rates and apply here: {url}" if url else ""
 
 
 def _format_calc_result(service: str, result: dict) -> str:
@@ -623,8 +660,14 @@ def banking_services_node(state: AgentState) -> AgentState:
                 if "error" in result:
                     state["response"] = personal_prefix + result["error"]
                 else:
+                    url_suffix = _append_service_url(
+                        service, slots, state.get("host_url") or ""
+                    )
                     state["response"] = (
-                        personal_prefix + _format_calc_result(service, result) + login_note
+                        personal_prefix
+                        + _format_calc_result(service, result)
+                        + login_note
+                        + url_suffix
                     )
                 state["intent"]              = f"{service}_calculator"
                 state["sentiment"]           = "Neutral"
@@ -715,8 +758,14 @@ def banking_services_node(state: AgentState) -> AgentState:
                 if "error" in result:
                     state["response"] = personal_prefix + result["error"]
                 else:
+                    url_suffix = _append_service_url(
+                        service, slots, state.get("host_url") or ""
+                    )
                     state["response"] = (
-                        personal_prefix + _format_calc_result(service, result) + login_note
+                        personal_prefix
+                        + _format_calc_result(service, result)
+                        + login_note
+                        + url_suffix
                     )
                 state["intent"]              = f"{service}_calculator"
                 state["sentiment"]           = "Neutral"
@@ -802,6 +851,13 @@ def banking_services_node(state: AgentState) -> AgentState:
                     "This has been flagged for immediate review by a human specialist. "
                     "Please do not take any action — someone will contact you shortly."
                 )
+
+            # Append product page link (deterministic — never LLM-generated)
+            _rec_key = _MY_RECORDS_URL_KEY.get(service_key)
+            if _rec_key:
+                _rec_url = get_site_url(_rec_key, state.get("host_url") or "")
+                if _rec_url:
+                    result += f"\n\nView product details and rates here: {_rec_url}"
 
             state["response"]            = result
             state["intent"]              = f"my_{service_key}"
@@ -998,6 +1054,7 @@ def run_agent(
     session_customer_id: str | None = None,
     pending_calculation: dict | None = None,
     customer_display_name: str | None = None,
+    host_url: str = "",
 ) -> tuple:
     """Run the agent and return a 7-tuple:
       (response, intent, sentiment, escalated, category, pending_calculation, customer_display_name)
@@ -1014,6 +1071,7 @@ def run_agent(
         "session_customer_id":   session_customer_id,      # trusted — from Flask session
         "pending_calculation":   pending_calculation,      # trusted — from Flask session
         "customer_display_name": customer_display_name,   # cosmetic — from Flask session
+        "host_url":              host_url,                # for deterministic URL injection only
         "intent":                None,
         "confidence":            None,
         "sentiment":             None,

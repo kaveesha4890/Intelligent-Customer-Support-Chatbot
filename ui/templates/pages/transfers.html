@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+{% block title %}Transfers &amp; Foreign Exchange — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Transfers — local SLIPS, CEFT, and international wire transfers with transparent fee schedules and indicative FX rates.{% endblock %}
+{% block active_transfers %}class="active"{% endblock %}
+
+{% block content %}
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Transfers &amp; Foreign Exchange</h1>
+            <p>Send money locally or overseas with competitive fees. Our AI chatbot shows you the exact fee before you visit a branch — no hidden charges.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">CEFT Local (up to 50k)</span>
+            <span class="hero-badge-rate" style="font-size:30px;">LKR 25</span>
+            <span class="hero-badge-sub">flat fee</span>
+        </div>
+    </div>
+</div>
+
+<div class="product-content" style="grid-template-columns:1fr;">
+
+    <!-- Transfer Fees Table -->
+    <div class="panel" style="margin-bottom:0;">
+        <div class="panel-title">Transfer Fee Schedule</div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+            These are the <strong>exact same fees</strong> our AI chatbot uses when you ask "how much does it cost to transfer LKR X." No discrepancy between chatbot and branch.
+        </p>
+        <div class="rate-table-wrap">
+            <table class="rate-table">
+                <thead>
+                    <tr>
+                        <th>Transfer Type</th>
+                        <th>Amount Range</th>
+                        <th>Fee Type</th>
+                        <th>Fee</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in fees %}
+                    <tr>
+                        <td>
+                            {% if f.transfer_type == 'local_slips' %}Local SLIPS
+                            {% elif f.transfer_type == 'local_ceft' %}Local CEFT
+                            {% elif f.transfer_type == 'foreign_wire' %}Foreign Wire Transfer
+                            {% else %}{{ f.transfer_type }}{% endif %}
+                        </td>
+                        <td>
+                            {% if f.max_amount %}LKR {{ "{:,.0f}".format(f.min_amount) }} – {{ "{:,.0f}".format(f.max_amount) }}
+                            {% else %}LKR {{ "{:,.0f}".format(f.min_amount) }} &amp; above{% endif %}
+                        </td>
+                        <td class="accent-val">{{ f.fee_type | capitalize }}</td>
+                        <td class="gold-val">
+                            {% if f.fee_type == 'fixed' %}LKR {{ "{:,.2f}".format(f.fee_value) }}
+                            {% else %}{{ f.fee_value }}% (min LKR {{ "{:,.2f}".format(f.min_fee) }}){% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- FX Rates Table -->
+    <div class="panel" style="margin-bottom:0;">
+        <div class="panel-title">Indicative Foreign Exchange Rates</div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+            Rates are updated periodically. Actual exchange rate at time of transaction may differ. Ask our AI chatbot for the current rate for any specific currency.
+        </p>
+        <div class="rate-table-wrap">
+            <table class="rate-table">
+                <thead>
+                    <tr>
+                        <th>Currency</th>
+                        <th>1 Unit → LKR</th>
+                        <th>LKR 1,000 → Currency</th>
+                        <th>Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fx in fx_rates %}
+                    <tr>
+                        <td><strong>{{ fx.currency_code }}</strong></td>
+                        <td class="gold-val">LKR {{ "{:,.2f}".format(fx.rate_to_lkr) }}</td>
+                        <td class="accent-val">{{ fx.currency_code }} {{ "{:,.4f}".format(1000 / fx.rate_to_lkr) }}</td>
+                        <td style="color:var(--text-muted);font-size:12px;">{{ fx.updated_date }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- CTA -->
+    <div style="background:var(--surface);border-radius:var(--radius-lg);padding:28px 32px;border:1px solid var(--border);box-shadow:var(--shadow);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:20px;margin-top:4px;">
+        <div>
+            <h3 style="font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--navy);margin-bottom:6px;">Need to make a transfer?</h3>
+            <p style="font-size:13px;color:var(--text-muted);">Visit any AutoTrust Bank branch or use our online banking portal. Our AI chatbot can calculate your exact fee before you go.</p>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <span class="btn-cta" style="cursor:default;opacity:.85;width:auto;padding:12px 28px;">Visit a Branch</span>
+            <a href="/" class="btn-cta-outline" style="width:auto;padding:10px 24px;">Calculate Fee with AI</a>
+        </div>
+    </div>
+
+    <div style="padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;margin-top:4px;">
+        &#128274; <strong>DEMO MODE — Simulated Data Only.</strong> All fees and FX rates are simulated for academic / demonstration purposes. FX rates shown are indicative and not live market rates.
+    </div>
+</div>
+{% endblock %}

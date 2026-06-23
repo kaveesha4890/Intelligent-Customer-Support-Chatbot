@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Vehicle Loan — AutoTrust Bank{% endblock %}
+{% block meta_description %}AutoTrust Bank Vehicle Loan — {{ rate.annual_rate }}% p.a., up to {{ rate.max_tenure_months }} months. Drive away sooner with fast-approval vehicle financing.{% endblock %}
+{% block active_loan_vehicle %}class="active"{% endblock %}
+
+{% block content %}
+<div class="product-hero">
+    <div class="product-hero-inner">
+        <div class="product-hero-text">
+            <h1>Vehicle Loan</h1>
+            <p>Finance your car, van, or motorbike with our competitive vehicle loan. New or reconditioned — we offer fast approvals and flexible repayment terms up to {{ rate.max_tenure_months }} months.</p>
+        </div>
+        <div class="product-hero-badge">
+            <span class="hero-badge-label">Annual Rate</span>
+            <span class="hero-badge-rate">{{ "%.2f"|format(rate.annual_rate) }}%</span>
+            <span class="hero-badge-sub">p.a. (reducing balance)</span>
+        </div>
+    </div>
+</div>
+
+<div class="product-content">
+    <div>
+        <div class="panel" style="margin-bottom:0">
+            <div class="panel-title">Rate &amp; Terms</div>
+            <div class="rate-table-wrap">
+                <table class="rate-table">
+                    <thead><tr><th>Parameter</th><th>Details</th></tr></thead>
+                    <tbody>
+                        <tr><td>Interest Rate</td><td class="gold-val">{{ "%.2f"|format(rate.annual_rate) }}% p.a.</td></tr>
+                        <tr><td>Rate Type</td><td class="accent-val">Reducing Balance</td></tr>
+                        <tr><td>Maximum Tenure</td><td class="accent-val">{{ rate.max_tenure_months }} months ({{ rate.max_tenure_months // 12 }} years)</td></tr>
+                        <tr><td>Loan Type</td><td>Secured — Vehicle as collateral</td></tr>
+                        <tr><td>Down Payment</td><td>Minimum 25% of vehicle value</td></tr>
+                        <tr><td>Eligible Vehicles</td><td>Cars, vans, SUVs, motorcycles (new &amp; reconditioned)</td></tr>
+                        <tr><td>Processing Fee</td><td>Subject to credit assessment</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:20px;padding:16px;background:var(--border-light);border-radius:var(--radius);font-size:13px;color:var(--text-muted);line-height:1.6;">
+                &#128274; <strong>Indicative rates only.</strong> Final approval subject to vehicle inspection, valuation, and credit assessment. Rates match our AI chatbot's calculator exactly.
+            </div>
+        </div>
+    </div>
+    <div class="product-sidebar">
+        <div class="cta-card">
+            <h3>Get on the Road</h3>
+            <p>Bring NIC, driving licence, vehicle permit/valuation, and income proof.</p>
+            <span class="btn-cta" style="cursor:default;opacity:.85;">Apply at Branch</span>
+            <a href="/" class="btn-cta-outline">Calculate EMI with AI</a>
+        </div>
+        <div class="features-card">
+            <h3>Key Benefits</h3>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Finance up to 75% of vehicle value</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Up to {{ rate.max_tenure_months // 12 }} years repayment</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>New and reconditioned vehicles eligible</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>Same-day conditional approval for existing customers</div></div>
+            <div class="feature-item"><div class="feature-icon">✓</div><div>AI chatbot for instant EMI estimates 24/7</div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
