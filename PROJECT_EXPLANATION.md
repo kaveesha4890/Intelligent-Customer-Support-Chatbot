@@ -547,6 +547,8 @@ category = _intent_to_category(intent, confidence)
 
 The message reaches `agent_loop_node`. The LLM is given one tool: `tool_search_knowledge_base`. It decides what to search and when to stop.
 
+**Design pattern:** This is a **Solo Loop** — one LLM, iterating on its own, with no second agent checking or supervising it. The LLM's pre-trained weights + the system prompt drive all decisions. No reinforcement learning is involved — nothing is learned or updated at runtime.
+
 ---
 
 ### Step 7 — LLM Searches Knowledge Base (may repeat up to 3×)
@@ -1458,16 +1460,61 @@ FINAL ANSWER: "To reset your PIN, go to Settings..."
 
 ### 16.2 Agentic vs Non-Agentic
 
-This project currently uses a **non-agentic pipeline**. Every step always runs in the same order. An agentic version would let the LLM decide which steps to run based on the question.
+The current project (`real_data_agentic` branch) is **fully agentic**. The `agent_loop_node` is a live ReAct loop where the LLM decides what to search and when it has enough information to respond. Earlier branches used a fixed pipeline where every step ran in the same order regardless of the question — that description no longer applies.
+
+| Property | Old fixed pipeline (earlier branches) | Current agentic system |
+|---|---|---|
+| Retrieval | Always one search, same query | LLM decides query, may search multiple times |
+| Generation | Always called after retrieval | LLM responds only when it decides it's ready |
+| Step order | Fixed | LLM-controlled inside `agent_loop_node` |
+| Routing between nodes | Rule-based conditional edges | Still rule-based (by design for safety) |
 
 ### 16.3 Types of AI Agents
 
-| Agent Type | How It Decides | Best For |
+| Agent Type | How It Decides | Best For | Used here? |
+|---|---|---|---|
+| **ReAct Agent** | Reason then act in a loop | General-purpose question answering | ✅ Yes — `agent_loop_node` |
+| **Tool-calling Agent** | LLM picks from a list of tools | Specific external APIs | ✅ Yes — same loop uses `bind_tools()` |
+| **Plan-and-Execute Agent** | Makes a full plan first | Complex multi-step tasks | ❌ No |
+| **LangGraph Agent** | State machine with conditional branching | Workflows with clear decision points | ✅ Yes — overall graph routing |
+
+### 16.4 Which Agentic Loop Pattern Does This Project Use?
+
+There are three common patterns for structuring agent work:
+
+| Pattern | What it means | Used here? |
 |---|---|---|
-| **ReAct Agent** | Reason then act in a loop | General-purpose question answering |
-| **Tool-calling Agent** | LLM picks from a list of tools | Specific external APIs |
-| **Plan-and-Execute Agent** | Makes a full plan first | Complex multi-step tasks |
-| **LangGraph Agent** | State machine with conditional branching | Workflows with clear decision points |
+| **Solo Loop** | One LLM iterates on its own — decides, acts, reads result, repeats | ✅ Yes — inside `agent_loop_node` |
+| **Maker-Checker** | One LLM produces output; a second LLM validates or critiques it | ❌ No |
+| **Manager-Helpers** | A manager LLM delegates tasks to specialised sub-agents | ⚠️ Partial — at graph level only |
+
+**`agent_loop_node` = Solo Loop.**
+One LLM, one tool, iterates up to 3 times. Nobody checks the output. Nobody delegates to it.
+
+**The 9-node graph as a whole = closest to Manager-Helpers, but not a true one.**
+The graph routes messages to 9 specialised nodes (`chitchat_node`, `account_node`, `banking_services_node`, etc.). This looks like a manager delegating to helpers. But the "manager" (the router) is a plain Python `if/else` function — not an LLM. A true Manager-Helpers pattern would use a **LLM manager** that reads the task and decides which agent to call. Here, that decision is hard-coded routing logic.
+
+### 16.5 Does the Agent Loop Use Reinforcement Learning?
+
+**No.**
+
+This is a common misconception. Here is why RL does not apply:
+
+| What RL requires | What this project does |
+|---|---|
+| A reward signal after each action | No reward signal — nothing scores each tool call |
+| A policy that updates from experience | LLM weights are frozen — nothing updates at runtime |
+| Learning over many episodes | Each conversation is independent — no cross-conversation learning |
+| A value function or Q-table | No value function — the LLM just generates the next token |
+
+**What actually drives decisions:** The LLM's pre-trained weights (trained by Meta) + the system prompt instructions. When the prompt says "use the search tool before you answer", the LLM follows that instruction because its training taught it to follow instructions — not because it received a reward for doing so.
+
+```
+RL:    agent acts → gets reward → policy updates → learns over time
+Ours:  LLM reads prompt → generates tool_call or text → done (no update)
+```
+
+The decision making is **prompt-guided inference**, not reinforcement learning.
 
 ---
 

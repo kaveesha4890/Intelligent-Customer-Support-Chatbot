@@ -232,6 +232,43 @@ The final architectural evolution replaces the fixed `retrieve_node → generate
 
 **Fallback guarantee:** If `langchain_ollama` is unavailable, the LLM does not support tool-calling, or the loop raises any exception, the node falls back silently to single-pass RAG (one search, one LLM call) — identical to the old behaviour. Response quality never regresses below the pre-loop baseline.
 
+### 4.8 Agentic Loop Pattern Classification
+
+The agent loop in this project is classified as a **Solo Loop** (also called a ReAct loop). Table 4.1 compares the three standard agentic loop patterns and maps them to this project.
+
+**Table 4.1 — Agentic Loop Pattern Comparison**
+
+| Pattern | Definition | Decision Maker | Used in This Project? |
+|---|---|---|---|
+| **Solo Loop** | One LLM iterates — decides to act, executes a tool, reads the result, decides again | Single LLM (pre-trained weights + prompt) | ✅ Yes — `agent_loop_node` |
+| **Maker-Checker** | One LLM produces output; a second LLM validates or critiques it | Two LLMs in sequence | ❌ No |
+| **Manager-Helpers** | A manager LLM delegates tasks to specialised sub-agents | LLM manager + multiple sub-agents | ⚠️ Partial — graph routing is rule-based, not LLM-driven |
+
+**`agent_loop_node` is a Solo Loop.** One LLM instance iterates up to three times. No second agent validates the output; no manager delegates the task to it. The surrounding 9-node graph resembles a Manager-Helpers pattern (specialised nodes for greetings, accounts, banking services, escalation) but the routing between nodes is performed by deterministic Python functions, not by an LLM manager.
+
+### 4.9 Decision-Making Mechanism — Not Reinforcement Learning
+
+The agent loop does **not** use reinforcement learning. This distinction is important because agentic systems that make sequential decisions are often mistakenly assumed to use RL.
+
+**Table 4.2 — RL vs Prompt-Guided Inference**
+
+| Property | Reinforcement Learning | This Project (Prompt-Guided Inference) |
+|---|---|---|
+| Reward signal | Required — agent receives a score after each action | None — no scorer evaluates tool calls |
+| Policy updates | Agent weights update from experience over many episodes | LLM weights are frozen — no updates at runtime |
+| Learning horizon | Improves across episodes (cross-conversation) | Each conversation is independent; nothing is retained |
+| Value function | Required (Q-values, advantage estimates, etc.) | None — LLM generates the next token directly |
+| Decision basis | Learned policy from reward-maximisation | Pre-trained instruction-following from Meta's training |
+
+The decision at each loop iteration (call a tool, or respond directly) is made by a single forward pass through the frozen LLM weights. The system prompt instructs the model to search before responding. The model follows this instruction because its pre-training taught it to follow instructions — not because it received a reward for doing so.
+
+```
+RL:    act → receive reward → update policy → repeat until convergence
+Ours:  read prompt → forward pass → emit tool_call or text → done
+```
+
+This design is intentional: RL would require a reward model and training infrastructure that are out of scope for a banking demo. More importantly, frozen inference is **auditable** — the system's behaviour is fully determined by the prompt and model version, with no opaque learned policy that could drift unpredictably in a regulated environment.
+
 ---
 
 ## 5. Implementation Details
@@ -761,6 +798,8 @@ Wang, A., Singh, A., Michael, J., Hill, F., Levy, O., & Bowman, S. R. (2018). GL
 
 Wolf, T., Debut, L., Sanh, V., Chaumond, J., Delangue, C., Moi, A., Cistac, P., Rault, T., Louf, R., Funtowicz, M., Davison, J., Shleifer, S., von Platen, P., Ma, C., Jernite, Y., Plu, J., Xu, C., Scao, T. L., Gugger, S., … Rush, A. M. (2020). Transformers: State-of-the-art natural language processing. In *Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations* (pp. 38–45). Association for Computational Linguistics. https://doi.org/10.18653/v1/2020.emnlp-demos.6
 
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., & Cao, Y. (2022). *ReAct: Synergizing reasoning and acting in language models*. arXiv preprint arXiv:2210.03629. https://arxiv.org/abs/2210.03629
+
 ---
 
 ## 11. Appendices
@@ -1002,7 +1041,7 @@ CREATE TABLE loan_rates (
 |---|---|
 | Intent classes supported | 77 (Banking77 full set) |
 | Knowledge base documents | 51 FAQ files across 4 categories |
-| Graph nodes | 9 (chitchat, account, banking_services, intent, sentiment, clarify, escalate, retrieve, generate) |
+| Graph nodes | 9 (chitchat, account, banking_services, intent, sentiment, clarify, escalate, agent_loop — Solo Loop / ReAct) |
 | @tool decorated functions | 15 |
 | Banking service product pages | 9 |
 | Struggle detection tips | 35 (covering all 9 pages × key fields) |
@@ -1028,7 +1067,7 @@ The following table maps bootcamp modules to project implementations, as documen
 | Mastering LangChain | ✅ Full | 15 `@tool` functions, prompt templates, output parsers, document loaders |
 | Vector Databases & Agentic RAG | ✅ Full | ChromaDB, category filtering, 0.45 threshold, hallucination mitigation |
 | Context Engineering | ✅ Full | LangGraph state machine, deterministic bypasses, multi-layer memory, router agents |
-| Agentic Design Patterns | ✅ Full | Tool use, planning (slot filling), reflection (prompt rules), multi-agent specialisation |
+| Agentic Design Patterns | ✅ Full | Tool use, planning (slot filling), reflection (prompt rules), multi-agent specialisation, Solo Loop ReAct pattern (`agent_loop_node`) |
 | Agentic AI Protocols | ⚠️ Partial | Internal tool registry only; MCP/A2A/ACP not implemented |
 | Model Context Protocol | ❌ Not implemented | Architecture is MCP-ready for future extension |
 | Evaluation of Agents | ✅ Full | Feedback system, analytics dashboard, model comparison, struggle detection |
