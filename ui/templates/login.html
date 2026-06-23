@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AutoTrust Bank — Secure customer login portal. Self-service banking, done right.">
+    <title>AutoTrust Bank — Verify Identity</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .login-bg {
+            flex: 1;
+            background: linear-gradient(150deg, var(--navy) 0%, var(--navy-mid) 55%, #1E4A7A 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px 48px;
+            position: relative;
+            overflow: hidden;
+        }
+        /* Subtle decorative blobs */
+        .login-bg::before {
+            content: '';
+            position: absolute;
+            width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(201,149,42,.12) 0%, transparent 70%);
+            top: -100px; right: -80px;
+            pointer-events: none;
+        }
+        .login-bg::after {
+            content: '';
+            position: absolute;
+            width: 350px; height: 350px;
+            background: radial-gradient(circle, rgba(255,255,255,.05) 0%, transparent 70%);
+            bottom: -50px; left: -40px;
+            pointer-events: none;
+        }
+
+        .badge-wrap {
+            margin-bottom: 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+            position: relative;
+            z-index: 1;
+        }
+        .login-logo {
+            font-family: var(--font-display);
+            font-size: 34px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+        .login-logo .logo-trust { color: var(--accent); }
+        .login-logo .logo-bank  { color: rgba(255,255,255,.55); font-weight: 600; font-size: 28px; }
+        .login-tagline {
+            color: rgba(255,255,255,.6);
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: .3px;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            padding: 36px 36px 28px;
+            position: relative;
+            z-index: 1;
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid rgba(255,255,255,.06);
+        }
+
+        .login-footer {
+            text-align: center;
+            margin-top: 22px;
+            font-size: 12.5px;
+            color: rgba(255,255,255,.5);
+            position: relative;
+            z-index: 1;
+        }
+        .login-footer a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .login-footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <!-- Utility Bar -->
+    <div class="utility-bar">
+        <a href="#">24/7 Support</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Find a Branch</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Help Centre</a>
+    </div>
+
+    <!-- Nav Bar -->
+    <nav class="nav-bar">
+        <a href="/login" class="nav-logo">
+            <span class="logo-auto">Auto</span><span class="logo-trust">Trust</span>&nbsp;<span class="logo-bank">Bank</span>
+        </a>
+    </nav>
+
+    <!-- Login Background -->
+    <div class="login-bg">
+        <!-- DEMO Badge -->
+        <div class="badge-wrap">
+            <span class="demo-badge">&#128274; DEMO MODE &mdash; Simulated Data Only</span>
+        </div>
+
+        <!-- Header -->
+        <div class="login-header">
+            <div class="login-logo">
+                Auto<span class="logo-trust">Trust</span>&nbsp;<span class="logo-bank">Bank</span>
+            </div>
+            <div class="login-tagline">Banking That Runs Itself</div>
+        </div>
+
+        <!-- Card -->
+        <div class="login-card card">
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('login')" id="tab-login">Login</div>
+                <div class="tab" onclick="showTab('signup')" id="tab-signup">Sign Up</div>
+            </div>
+
+            <!-- Login Form -->
+            <div id="login-form">
+                <div id="login-alert" class="alert"></div>
+                <div class="form-group">
+                    <label for="login-id">Customer ID</label>
+                    <input type="text" id="login-id" placeholder="e.g. DEMO001" autocomplete="username"/>
+                </div>
+                <div class="form-group">
+                    <label for="login-pin">PIN</label>
+                    <input type="password" id="login-pin" placeholder="&#8226;&#8226;&#8226;&#8226;"
+                           maxlength="6" inputmode="numeric" autocomplete="current-password"
+                           onkeydown="if(event.key==='Enter')doLogin()"/>
+                    <div class="hint">4–6 digit PIN</div>
+                </div>
+                <button class="btn-primary" onclick="doLogin()" id="login-submit-btn">Verify Identity</button>
+            </div>
+
+            <!-- Signup Form -->
+            <div id="signup-form" style="display:none">
+                <div id="signup-alert" class="alert"></div>
+                <div class="form-group">
+                    <label for="signup-name">Full Name</label>
+                    <input type="text" id="signup-name" placeholder="Your full name"/>
+                </div>
+                <div class="form-group">
+                    <label for="signup-id">Choose Customer ID</label>
+                    <input type="text" id="signup-id" placeholder="e.g. MYACCT01"/>
+                    <div class="hint">3–15 alphanumeric characters</div>
+                </div>
+                <div class="form-group">
+                    <label for="signup-pin">Create PIN</label>
+                    <input type="password" id="signup-pin" placeholder="&#8226;&#8226;&#8226;&#8226;"
+                           maxlength="6" inputmode="numeric"/>
+                    <div class="hint">4–6 digits only</div>
+                </div>
+                <button class="btn-primary" onclick="doSignup()" id="signup-submit-btn">Create Demo Account</button>
+            </div>
+        </div>
+
+        <div class="login-footer">
+            No account yet? Switch to the
+            <a href="#" onclick="showTab('signup');return false;">Sign Up</a> tab above.
+        </div>
+    </div>
+
+<script>
+function showTab(t) {
+    document.querySelectorAll('.tab').forEach((el, i) =>
+        el.classList.toggle('active', (t==='login'&&i===0)||(t==='signup'&&i===1)));
+    document.getElementById('login-form').style.display  = t==='login'  ? 'block' : 'none';
+    document.getElementById('signup-form').style.display = t==='signup' ? 'block' : 'none';
+}
+function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = 'alert ' + type; el.textContent = msg; el.style.display = 'block';
+}
+async function doLogin() {
+    const cid = document.getElementById('login-id').value.trim();
+    const pin = document.getElementById('login-pin').value;
+    if (!cid || !pin) { showAlert('login-alert', 'error', 'Please enter your Customer ID and PIN.'); return; }
+    const btn = document.getElementById('login-submit-btn');
+    btn.disabled = true; btn.textContent = 'Verifying…';
+    const res  = await fetch('/login', { method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({customer_id: cid, pin: pin}) });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = 'Verify Identity';
+    document.getElementById('login-pin').value = '';
+    if (data.success) {
+        showAlert('login-alert', 'success', 'Identity verified! Redirecting…');
+        setTimeout(() => window.location.href = '/', 800);
+    } else {
+        showAlert('login-alert', data.locked ? 'locked' : 'error', data.message);
+    }
+}
+async function doSignup() {
+    const name = document.getElementById('signup-name').value.trim();
+    const cid  = document.getElementById('signup-id').value.trim();
+    const pin  = document.getElementById('signup-pin').value;
+    if (!name || !cid || !pin) { showAlert('signup-alert', 'error', 'Please fill in all fields.'); return; }
+    if (!/^[0-9]{4,6}$/.test(pin)) { showAlert('signup-alert', 'error', 'PIN must be 4–6 digits.'); return; }
+    if (!/^[a-zA-Z0-9]{3,15}$/.test(cid)) {
+        showAlert('signup-alert', 'error', 'Customer ID must be 3–15 alphanumeric characters.'); return; }
+    const btn = document.getElementById('signup-submit-btn');
+    btn.disabled = true; btn.textContent = 'Creating…';
+    const res  = await fetch('/signup', { method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: name, customer_id: cid, pin: pin}) });
+    const data = await res.json();
+    btn.disabled = false; btn.textContent = 'Create Demo Account';
+    document.getElementById('signup-pin').value = '';
+    if (data.success) {
+        showAlert('signup-alert', 'success', 'Account created! Redirecting…');
+        setTimeout(() => window.location.href = '/', 1200);
+    } else {
+        showAlert('signup-alert', 'error', data.message);
+    }
+}
+</script>
+</body>
+</html>

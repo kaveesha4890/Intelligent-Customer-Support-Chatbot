@@ -94,6 +94,8 @@ Rules:
 - If the customer asks for contact details (email, phone, address), provide the exact details from the context
 - If the question refers to something from the conversation history, use that context to understand what they mean
 - Do NOT repeat an answer already given in the conversation history — give more detail or a different angle
+- Do NOT ask a question you have already asked in the conversation history — the customer has already answered it, use their answer
+- If the customer has provided information in an earlier turn (merchant name, amount, time, etc.), treat it as known — never ask for it again
 - Output the answer directly, nothing else
 
 Answer:"""

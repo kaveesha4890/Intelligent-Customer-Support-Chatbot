@@ -291,7 +291,7 @@ def _format_calc_result(service: str, result: dict) -> str:
         rate = r["rate_to_lkr"]
         reverse = 1000 / rate  # how much foreign currency per LKR 1000
         text = (
-            f"Exchange Rate  (Simulated Demo Data)\n"
+            f"Exchange Rate\n"
             f"{'=' * 36}\n"
             f"1 {code}      = LKR {rate:,.2f}\n"
             f"LKR 1,000    = {code} {reverse:,.4f}\n"
@@ -759,9 +759,24 @@ def banking_services_node(state: AgentState) -> AgentState:
     ]
     for patterns, tool_fn, service_key in MY_CHECKS:
         if any(p in msg for p in patterns):
-            # Card + frustration phrase → let LLM handle with frustrated-customer few-shot
+            # Card + frustration phrase → give immediate troubleshooting steps directly.
+            # Never ask the customer to explain the problem they just described.
             if service_key == "cards" and any(f in msg for f in _CARD_FRUSTRATION):
-                break
+                display_name = state.get("customer_display_name")
+                name_part    = f"{display_name}, " if display_name else ""
+                state["response"] = (
+                    f"{name_part}I hear you — let's get this sorted right now.\n\n"
+                    "A card decline despite sufficient balance is usually one of these:\n"
+                    "1. Daily spending limit reached — check Account > Cards > Spending Limits.\n"
+                    "2. Merchant category blocked — some card plans restrict certain merchant types.\n"
+                    "3. Temporary security hold — unusual spending patterns trigger an auto-hold.\n\n"
+                    "Call our 24/7 line at 1-800-123-4567 if you need it unblocked immediately."
+                )
+                state["intent"]    = "card_not_working"
+                state["sentiment"] = "Negative"
+                state["escalated"] = False
+                state["category"]  = "technical"
+                return state
 
             cid = state.get("session_customer_id") or ""
             if not cid:

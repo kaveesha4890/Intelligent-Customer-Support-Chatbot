@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AutoTrust Bank — Intelligent customer support chat. Self-service banking, done right.">
+    <title>AutoTrust Bank — Support Chat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        body { display: flex; flex-direction: column; min-height: 100vh; }
+
+        /* ── Account Info Strip ─────────────────────────── */
+        #account-header {
+            display: none;
+            background: linear-gradient(90deg, var(--navy) 0%, var(--navy-mid) 100%);
+            color: #fff;
+            padding: 9px 28px;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+            flex-wrap: wrap;
+            border-bottom: 2px solid rgba(201,149,42,.4);
+        }
+        #account-header .acct-name { font-weight: 700; font-size: 13.5px; }
+        #account-header .acct-no   { color: rgba(255,255,255,.65); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+        #account-header .acct-type { color: var(--accent); font-weight: 600; font-size: 12px; }
+        #account-header .acct-bal  { color: #86EFAC; font-weight: 700; margin-left: auto; font-size: 14px; }
+        #account-header .logout-btn {
+            background: rgba(255,255,255,.12);
+            border: 1px solid rgba(255,255,255,.25);
+            color: #fff;
+            padding: 4px 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: var(--font-body);
+            font-weight: 600;
+            margin-left: 8px;
+            transition: background .15s;
+        }
+        #account-header .logout-btn:hover { background: rgba(255,255,255,.22); }
+
+        /* ── Chat Layout ─────────────────────────────────── */
+        .chat-outer {
+            flex: 1;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 28px 20px 36px;
+            background: var(--bg);
+        }
+        .chat-wrapper { width: 100%; max-width: 720px; }
+
+        .chat-page-title {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .chat-page-title h1 {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--navy);
+        }
+        .chat-page-title a {
+            font-size: 13px;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 4px 12px;
+            border: 1px solid var(--accent);
+            border-radius: 20px;
+            transition: background .15s, color .15s;
+            margin-left: auto;
+        }
+        .chat-page-title a:hover {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        /* ── Chat Widget ─────────────────────────────────── */
+        #app {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 72vh;
+        }
+
+        /* Escalation Banner */
+        #escalation {
+            display: none;
+            background: var(--danger);
+            color: #fff;
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: .3px;
+            text-align: center;
+            border-bottom: 2px solid #B91C1C;
+        }
+
+        /* Chat Window */
+        #chat-window {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+        #chat-window::-webkit-scrollbar { width: 5px; }
+        #chat-window::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+        .bubble-row { display: flex; flex-direction: column; }
+        .bubble-row.user-row { align-items: flex-end; }
+        .bubble-row.bot-row  { align-items: flex-start; }
+
+        .msg {
+            max-width: 74%;
+            padding: 11px 16px;
+            border-radius: 18px;
+            line-height: 1.55;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .user {
+            background: var(--navy-mid);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .bot {
+            background: var(--border-light);
+            color: var(--text);
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--border);
+        }
+        .typing { color: var(--text-muted); font-style: italic; font-size: 13px; }
+
+        /* Feedback Row */
+        .feedback-row { display: flex; gap: 6px; margin-top: 5px; }
+        .fb-btn {
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 3px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-muted);
+            transition: background .15s, border-color .15s;
+        }
+        .fb-btn:hover { background: var(--border-light); border-color: var(--accent); }
+
+        /* Meta Bar */
+        #meta {
+            background: #FAFBFC;
+            border-top: 1px solid var(--border-light);
+            padding: 10px 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        #meta span { display: flex; align-items: center; gap: 4px; }
+        #meta .meta-label { font-weight: 600; color: var(--text-subtle); text-transform: uppercase; font-size: 10px; letter-spacing: .4px; }
+
+        /* Input Row */
+        #input-row {
+            display: flex;
+            padding: 14px 16px;
+            gap: 10px;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+        }
+        #user-input {
+            flex: 1;
+            padding: 11px 16px;
+            border: 1.5px solid var(--border);
+            border-radius: 24px;
+            font-size: 14px;
+            font-family: var(--font-body);
+            color: var(--text);
+            background: #FAFBFC;
+            outline: none;
+            transition: border-color .2s, box-shadow .2s;
+        }
+        #user-input:focus {
+            border-color: var(--navy-mid);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(27,58,92,.08);
+        }
+        #send-btn {
+            background: var(--navy-mid);
+            color: #fff;
+            border: none;
+            border-radius: 24px;
+            padding: 11px 26px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+            font-family: var(--font-body);
+            transition: background .2s, box-shadow .2s, transform .1s;
+            white-space: nowrap;
+        }
+        #send-btn:hover:not(:disabled) {
+            background: var(--accent);
+            box-shadow: 0 4px 14px rgba(201,149,42,.35);
+            transform: translateY(-1px);
+        }
+        #send-btn:active:not(:disabled) { transform: translateY(0); }
+        #send-btn:disabled { background: var(--text-subtle); cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <!-- Utility Bar -->
+    <div class="utility-bar">
+        <a href="#">24/7 Support</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Find a Branch</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Help Centre</a>
+    </div>
+
+    <!-- Nav Bar -->
+    <nav class="nav-bar">
+        <a href="/" class="nav-logo">
+            <span class="logo-auto">Auto</span><span class="logo-trust">Trust</span>&nbsp;<span class="logo-bank">Bank</span>
+        </a>
+        <div class="nav-links">
+            <a href="/" class="active">Support Chat</a>
+            <a href="/dashboard">Analytics</a>
+        </div>
+    </nav>
+
+    <!-- Account Header Strip (visible when logged in) -->
+    <div id="account-header">
+        <span class="acct-name" id="hdr-name"></span>
+        <span class="acct-no"   id="hdr-acct"></span>
+        <span class="acct-type" id="hdr-type"></span>
+        <span class="acct-bal"  id="hdr-bal"></span>
+        <button class="logout-btn" onclick="doLogout()">Log out</button>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="chat-outer">
+        <div class="chat-wrapper">
+            <div class="chat-page-title">
+                <h1>Customer Support</h1>
+                <a href="/dashboard" id="dashboard-link">Analytics Dashboard</a>
+            </div>
+
+            <div id="app">
+                <div id="escalation">&#9888;&#65039; ESCALATED TO HUMAN AGENT</div>
+                <div id="chat-window"></div>
+                <div id="meta">
+                    <span><span class="meta-label">Intent</span>&nbsp;<span id="intent-label">—</span></span>
+                    <span><span class="meta-label">Sentiment</span>&nbsp;<span id="sentiment-label">—</span></span>
+                    <span><span class="meta-label">Category</span>&nbsp;<span id="category-label">—</span></span>
+                </div>
+                <div id="input-row">
+                    <input id="user-input" type="text" placeholder="Type your message…"
+                           onkeydown="if(event.key==='Enter') sendMessage()"/>
+                    <button id="send-btn" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    let history = [];
+    const sessionId = crypto.randomUUID();
+    let lastFeedbackRow = null;
+    const NO_FEEDBACK_INTENTS = new Set(['greeting', 'unclear']);
+
+    window.addEventListener('DOMContentLoaded', async () => {
+        const res  = await fetch('/me');
+        const data = await res.json();
+        if (data.authenticated) {
+            document.getElementById('hdr-name').textContent = data.name;
+            document.getElementById('hdr-acct').textContent = data.masked_account_no;
+            document.getElementById('hdr-type').textContent = data.account_type;
+            document.getElementById('hdr-bal').textContent  = data.balance;
+            document.getElementById('account-header').style.display = 'flex';
+        }
+    });
+
+    async function doLogout() {
+        const res  = await fetch('/logout', {method: 'POST'});
+        const data = await res.json();
+        window.location.href = data.redirect || '/login';
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('user-input');
+        const msg = input.value.trim();
+        if (!msg) return;
+
+        input.value = '';
+        document.getElementById('send-btn').disabled = true;
+
+        appendUserMessage(msg);
+        const typing = appendBotMessage('Typing…', null, null);
+
+        try {
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: msg, history: history, session_id: sessionId})
+            });
+            const data = await res.json();
+
+            typing.remove();
+            appendBotMessage(data.response, data.turn_id, data.intent);
+            history.push([msg, data.response]);
+
+            document.getElementById('intent-label').textContent    = data.intent;
+            document.getElementById('sentiment-label').textContent = data.sentiment;
+            document.getElementById('category-label').textContent  = data.category;
+            document.getElementById('escalation').style.display = data.escalated ? 'block' : 'none';
+        } catch(e) {
+            typing.remove();
+            appendBotMessage('Error: Could not get response.', null, null);
+        }
+
+        document.getElementById('send-btn').disabled = false;
+        input.focus();
+    }
+
+    function appendUserMessage(text) {
+        const win = document.getElementById('chat-window');
+        const row = document.createElement('div');
+        row.className = 'bubble-row user-row';
+        row.innerHTML = '<div class="msg user">' + escHtml(text) + '</div>';
+        win.appendChild(row);
+        win.scrollTop = win.scrollHeight;
+    }
+
+    function appendBotMessage(text, turnId, intent) {
+        const win = document.getElementById('chat-window');
+        const isTyping     = text === 'Typing…';
+        const showFeedback = !isTyping && turnId && !NO_FEEDBACK_INTENTS.has(intent);
+
+        if (showFeedback && lastFeedbackRow) {
+            const prev = lastFeedbackRow.querySelector('.feedback-row');
+            if (prev) prev.remove();
+            lastFeedbackRow = null;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'bubble-row bot-row';
+        const fbHtml = showFeedback
+            ? '<div class="feedback-row">'
+              + '<button class="fb-btn" onclick="sendFeedback(' + turnId + ',1,this)">&#128077;</button>'
+              + '<button class="fb-btn" onclick="sendFeedback(' + turnId + ',0,this)">&#128078;</button>'
+              + '</div>'
+            : '';
+        row.innerHTML = '<div class="msg bot' + (isTyping ? ' typing' : '') + '">'
+                        + escHtml(text) + '</div>' + fbHtml;
+        win.appendChild(row);
+        win.scrollTop = win.scrollHeight;
+        if (showFeedback) lastFeedbackRow = row;
+        return row;
+    }
+
+    async function sendFeedback(turnId, rating, btn) {
+        await fetch('/feedback', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({turn_id: turnId, rating: rating})
+        });
+        btn.closest('.feedback-row').innerHTML =
+            '<span style="font-size:11px;color:var(--text-subtle);">Thanks for your feedback</span>';
+        lastFeedbackRow = null;
+    }
+
+    function escHtml(text) {
+        return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AutoTrust Bank — Analytics Dashboard. Monitor support performance in real time.">
+    <title>AutoTrust Bank — Analytics Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        body { display: flex; flex-direction: column; min-height: 100vh; }
+
+        .dash-outer {
+            flex: 1;
+            padding: 32px 36px 48px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .dash-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 28px;
+        }
+        .dash-header h1 {
+            font-family: var(--font-display);
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--navy);
+        }
+        .back-link {
+            margin-left: auto;
+            font-size: 13px;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            padding: 5px 16px;
+            border: 1.5px solid var(--accent);
+            border-radius: 20px;
+            transition: background .15s, color .15s;
+        }
+        .back-link:hover { background: var(--accent); color: #fff; }
+
+        /* ── Stat Cards Row ─────────────────────────────── */
+        .stat-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 28px;
+            flex-wrap: wrap;
+        }
+        .stat-card { flex: 1; min-width: 140px; }
+
+        /* ── Bar Chart max-width normalization ───────────── */
+        .bar-fill { min-width: 4px; }
+    </style>
+</head>
+<body>
+    <!-- Utility Bar -->
+    <div class="utility-bar">
+        <a href="#">24/7 Support</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Find a Branch</a>
+        <span class="utility-sep">·</span>
+        <a href="#">Help Centre</a>
+    </div>
+
+    <!-- Nav Bar -->
+    <nav class="nav-bar">
+        <a href="/" class="nav-logo">
+            <span class="logo-auto">Auto</span><span class="logo-trust">Trust</span>&nbsp;<span class="logo-bank">Bank</span>
+        </a>
+        <div class="nav-links">
+            <a href="/">Support Chat</a>
+            <a href="/dashboard" class="active">Analytics</a>
+        </div>
+    </nav>
+
+    <!-- Dashboard Content -->
+    <div class="dash-outer">
+        <div class="dash-header">
+            <h1>Analytics Dashboard</h1>
+            <a href="/" class="back-link">&#8592; Back to Chat</a>
+        </div>
+
+        <!-- Stat Cards -->
+        <div class="stat-row">
+            <div class="stat-card">
+                <div class="num">{{total}}</div>
+                <div class="lbl">Total Messages</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="num">{{escalated}}</div>
+                <div class="lbl">Escalated</div>
+            </div>
+            <div class="stat-card success">
+                <div class="num">{{thumbs_up}}</div>
+                <div class="lbl">Thumbs Up</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="num">{{thumbs_down}}</div>
+                <div class="lbl">Thumbs Down</div>
+            </div>
+        </div>
+
+        <!-- Top Intents Bar Chart -->
+        <div class="panel">
+            <div class="panel-title">Top Intents</div>
+            {% for item in top_intents %}
+            <div class="bar-row">
+                <div class="bar-label" title="{{item.intent}}">{{item.intent}}</div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ [item.count * 8, 100] | min }}%"></div>
+                </div>
+                <div class="bar-count">{{item.count}}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Thumbs-Down Responses Table -->
+        {% if bad_responses %}
+        <div class="panel">
+            <div class="panel-title">Thumbs-Down Responses</div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>User said</th>
+                        <th>Bot replied</th>
+                        <th>Intent</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in bad_responses %}
+                    <tr>
+                        <td>{{r.user_msg}}</td>
+                        <td>{{r.bot_msg}}</td>
+                        <td>{{r.intent}}</td>
+                        <td>{{r.timestamp}}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
